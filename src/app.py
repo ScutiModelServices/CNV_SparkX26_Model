@@ -97,7 +97,9 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
         return value or 4
 
     updates = updates or Updates(client.model, cached_sha=lambda: client.cached_sha(), remote_sha=lambda: client.remote_sha(),
-                                 download=lambda: client.pull(), unload=lambda: client.unload())
+                                 download=lambda: client.pull(), unload=lambda: client.unload(),
+                                 description="Looks for newer model weights on the Hugging Face Hub without downloading.",
+                                 reload_note="Weights downloaded. Every replica drops the old copy within a few seconds and loads the new weights on its next request.")
 
     async def check_forever() -> None:
         """Checks every `update_check_hours` (0 = off). The value is read again every second, so the admin page can change it."""
