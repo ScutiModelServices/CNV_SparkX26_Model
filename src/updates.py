@@ -1,4 +1,4 @@
-"""Update state and sequencing for the Spark weights on the Hub; checks never download them."""
+"""Update state and sequencing for the model files; checks never download them."""
 
 from __future__ import annotations
 
@@ -9,12 +9,16 @@ from typing import Any, Awaitable, Callable
 
 
 class Updates:
-    """Inject async revision, download and unload operations; serialize checks and updates per replica."""
+    """Inject async revision, download and unload operations; serialize checks and updates per replica.
+    `description` and `reload_note` are the texts the admin page shows; each service words them for its own backend."""
 
     def __init__(self, model: str, *, cached_sha: Callable[[], Awaitable[str | None]],
                  remote_sha: Callable[[], Awaitable[str]], download: Callable[[], Awaitable[None]],
-                 unload: Callable[[], Awaitable[None]]) -> None:
+                 unload: Callable[[], Awaitable[None]],
+                 description: str = "Looks for newer model files on the Hugging Face Hub without downloading.",
+                 reload_note: str = "Files downloaded. Every replica drops the old copy within a few seconds and loads the new files on its next request.") -> None:
         self._model = model
+        self._description, self._reload_note = description, reload_note
         self._cached_sha, self._remote_sha = cached_sha, remote_sha
         self._download, self._unload = download, unload
         self._lock = asyncio.Lock()
@@ -24,8 +28,7 @@ class Updates:
     def status(self) -> dict[str, Any]:
         """Return the last result without I/O or exposing mutable internal state."""
         return {**deepcopy(self._status),
-                "description": "Looks for newer model weights on the Hugging Face Hub without downloading.",
-                "reload_note": "Weights downloaded. Every replica drops the old copy within a few seconds and loads the new weights on its next request."}
+                "description": self._description, "reload_note": self._reload_note}
 
     async def check(self) -> dict[str, Any]:
         async with self._lock:
