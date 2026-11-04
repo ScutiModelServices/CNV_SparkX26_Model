@@ -70,3 +70,10 @@ uv run pytest
 - A generation stops after 120 s and returns what it has with `finish_reason: "length"`.
 - `TORCHDYNAMO_DISABLE=1` is set by the service; unpacking the weights otherwise tries to compile C++ and fails on
   machines without a compiler.
+
+
+## Try it from the admin page
+
+Open `/admin/` and use **Try it** to call the public API with a service token held only in memory. Runs use normal token scopes, limits and caches; the panel shows HTTP status, latency, responses, cancellation and a curl equivalent with a token placeholder. See [the web UI guide](docs/guide-web-ui.md#try-it-send-a-real-request).
+
+Chat sends messages to `POST /v1/chat`, with optional project, temperature, max_tokens and streaming. Spark rejects tools, schema and thinking with 422; its form does not send those MiniCPM-only fields.
