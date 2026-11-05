@@ -86,3 +86,8 @@ Updating the service itself: `docker compose up -d --build`, then `docker compos
 A plain publish (`tools\deploy.bat` option 1) only updates the `live` branch. For a release set `VERSION` (and
 `pyproject.toml` to the same number), commit, then run `tools\deploy.bat` option R or
 `py tools\publish_live.py --release`. `tools\make_zip.bat` then builds `zip_versions\SparkX26Model-<VERSION>.zip`.
+
+
+## Verify with Try it
+
+After deployment, open `/admin/` and use **Try it** with a public service token to exercise the deployed public route. It uses normal scope, admission/rate limits and cache behavior, so busy or unauthorized requests remain visible as HTTP errors. No new environment setting or admin-to-public auth bypass is introduced. Deploy the complete `web/` directory, including `playground.js`. See [the web UI guide](docs/guide-web-ui.md#try-it-send-a-real-request) for input formats, limits and token handling.

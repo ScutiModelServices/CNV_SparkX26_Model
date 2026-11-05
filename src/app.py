@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cache import AnswerCache
 from engine import DEFAULT_MODEL, SparkEngine, EngineError, default_marker
+from ollama_backend import engine_from_env
 from options import SETTINGS
 import settings
 from tokens import LatencyHistogram, TokenStore
@@ -80,8 +81,9 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
     many answers per replica (SPARK_CACHE_SIZE). `config` (the admin page's settings) replaces `warm`, `check_hours`,
     `max_inflight` and `cache_size` and keeps them live; without it they stay fixed."""
     tokens = tokens or TokenStore(os.environ.get("SPARK_TOKENS_FILE", "tokens.json"))
-    client = client or SparkEngine(config.get("model") if config else os.environ.get("SPARK_MODEL", DEFAULT_MODEL),
-                                    dtype=config.get("dtype") if config else "bfloat16", marker=default_marker())
+    client = client or engine_from_env("SPARK_", SparkEngine, DEFAULT_MODEL, marker=default_marker()) or SparkEngine(
+        config.get("model") if config else os.environ.get("SPARK_MODEL", DEFAULT_MODEL),
+        dtype=config.get("dtype") if config else "bfloat16", marker=default_marker())
     inflight = 0
     cache = AnswerCache()
 
@@ -385,9 +387,10 @@ def main() -> None:
 
     store = TokenStore(os.environ.get("SPARK_TOKENS_FILE", "tokens.json"))
     config = settings.Config(store.settings_path, SETTINGS)
-    client = SparkEngine(config.get("model"), projects_dir=config.get("project_models_dir"),
-                          max_projects=config.get("max_project_models"), dtype=config.get("dtype"),
-                          marker=default_marker())
+    client = engine_from_env("SPARK_", SparkEngine, DEFAULT_MODEL, projects_dir=config.get("project_models_dir"),
+                             max_projects=config.get("max_project_models"), marker=default_marker()) or SparkEngine(
+        config.get("model"), projects_dir=config.get("project_models_dir"),
+        max_projects=config.get("max_project_models"), dtype=config.get("dtype"), marker=default_marker())
     saved = settings.load(store.settings_path)
     threads = saved.get("num_thread") or os.environ.get("SPARK_NUM_THREAD", "").strip()
     if threads:

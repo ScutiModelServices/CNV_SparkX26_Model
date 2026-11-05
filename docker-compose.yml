@@ -14,6 +14,9 @@ services:
       SPARK_ADMIN_PASSWORD: ${SPARK_ADMIN_PASSWORD:-}
       SPARK_NUM_THREAD: ${SPARK_NUM_THREAD:-}
       SPARK_REPLICAS: ${SPARK_REPLICAS:-1}  # shown read-only on /admin/
+      SPARK_OLLAMA_URL: ${SPARK_OLLAMA_URL:-}  # set = answer through this Ollama (GGUF) instead of torch
+      SPARK_OLLAMA_MODEL: ${SPARK_OLLAMA_MODEL:-}
+    extra_hosts: ["host.docker.internal:host-gateway"]  # reaches an Ollama running on the host
     volumes:
       - models:/models
       - tokens:/data
