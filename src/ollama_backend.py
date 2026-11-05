@@ -18,7 +18,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 from engine import EngineError
 
@@ -39,17 +39,26 @@ class OllamaLoaded:
     """Same two methods as `engine.Loaded`, answered by Ollama's /api/chat."""
 
     def __init__(self, url: str, model: str, load_timeout: float = 300.0, thinking: bool = False,
-                 hide_reasoning: bool = True) -> None:
-        self.url, self.model, self.thinking, self.hide_reasoning = url.rstrip("/"), model, thinking, hide_reasoning
+                 hide_reasoning: bool = True, live: Callable[[], tuple[bool, bool]] | None = None) -> None:
+        """`live` returns (thinking, hide_reasoning) at every call, so a saved setting applies without a restart."""
+        self.url, self.model, self._fixed, self._live = url.rstrip("/"), model, (thinking, hide_reasoning), live
         _call(self.url, "/api/generate", {"model": model, "prompt": ""}, load_timeout).close()  # loads the model into RAM
+
+    @property
+    def thinking(self) -> bool:
+        return (self._live or (lambda: self._fixed))()[0]
+
+    @property
+    def hide_reasoning(self) -> bool:
+        return (self._live or (lambda: self._fixed))()[1]
 
     def _body(self, messages: list[dict[str, str]], temperature: float, max_tokens: int, stream: bool) -> dict[str, Any]:
         return {"model": self.model, "messages": messages, "stream": stream, "think": self.thinking,
                 "options": {"temperature": temperature, "num_predict": max_tokens}}
 
-    def _clean(self, text: str) -> str:
+    def _clean(self, text: str, hide: bool | None = None) -> str:
         """The answer without reasoning that was written into it: what follows the last `</think>`."""
-        return text.rsplit("</think>", 1)[-1].strip() if self.hide_reasoning and "</think>" in text else text
+        return text.rsplit("</think>", 1)[-1].strip() if (self.hide_reasoning if hide is None else hide) and "</think>" in text else text
 
     @staticmethod
     def _stats(last: dict[str, Any]) -> dict[str, Any]:
@@ -59,6 +68,7 @@ class OllamaLoaded:
     def stream(self, messages: list[dict[str, str]], temperature: float, max_tokens: int, max_time: float,
                stop: Any) -> Iterator[tuple[str, Any]]:
         response = _call(self.url, "/api/chat", self._body(messages, temperature, max_tokens, True), max_time)
+        hide = self.hide_reasoning  # fixed for this reply
         held: list[str] = []  # with hide_reasoning the reply is kept until it is complete
         try:
             for raw in response:  # one JSON object per line
@@ -68,12 +78,12 @@ class OllamaLoaded:
                 if piece.get("error"):
                     raise EngineError(str(piece["error"]))
                 if text := piece.get("message", {}).get("content"):
-                    if self.hide_reasoning:
+                    if hide:
                         held.append(text)
                     else:
                         yield "content", text
                 if piece.get("done"):
-                    if held and (answer := self._clean("".join(held))):
+                    if held and (answer := self._clean("".join(held), hide)):
                         yield "content", answer
                     yield "done", self._stats(piece)
                     return
@@ -95,10 +105,11 @@ def _flag(value: Any, name: str, default: bool) -> bool:
 
 
 def engine_from_env(prefix: str, engine_class: type, default_model: str, thinking: str | None = None,
-                    hide_reasoning: bool | None = None, **options: Any) -> Any | None:
+                    hide_reasoning: bool | None = None, settings: Any = None, **options: Any) -> Any | None:
     """An engine backed by Ollama when `<prefix>OLLAMA_URL` is set, else None (the caller builds the torch engine).
-    `thinking` (`off` or `on`) and `hide_reasoning` come from the arguments (saved settings), else `<prefix>THINKING`
-    and `<prefix>HIDE_REASONING`."""
+    `thinking` (`off` or `on`) and `hide_reasoning` come from the arguments, else `<prefix>THINKING` and
+    `<prefix>HIDE_REASONING`. `settings` (a `settings.Config` with keys `thinking` and `hide_reasoning`) is read at every
+    call and wins, so the admin page changes them live."""
     url = os.environ.get(f"{prefix}OLLAMA_URL", "").strip().rstrip("/")
     if not url:
         return None
@@ -108,6 +119,11 @@ def engine_from_env(prefix: str, engine_class: type, default_model: str, thinkin
         raise ValueError(f"{prefix}THINKING must be off or on, not {mode!r}")
     hide = _flag(hide_reasoning if hide_reasoning is not None else os.environ.get(f"{prefix}HIDE_REASONING"), "hide_reasoning", True)
 
+    def live() -> tuple[bool, bool]:
+        return (str(settings.get("thinking")).lower() == "on", bool(settings.get("hide_reasoning")))
+
+    live = live if settings is not None else None
+
     def local_digest(_: str) -> str | None:
         with _call(url, "/api/tags", None, 15) as response:
             return next((m["digest"] for m in json.load(response)["models"] if m["name"] == model), None)
@@ -115,5 +131,5 @@ def engine_from_env(prefix: str, engine_class: type, default_model: str, thinkin
     def pull(_: str) -> None:
         _call(url, "/api/pull", {"model": model, "stream": False}, 3600).close()
 
-    return engine_class(model, loader=lambda source: OllamaLoaded(url, source, thinking=mode == "on", hide_reasoning=hide), set_threads=lambda count: None,
+    return engine_class(model, loader=lambda source: OllamaLoaded(url, source, thinking=mode == "on", hide_reasoning=hide, live=live), set_threads=lambda count: None,
                         cached_sha=local_digest, remote_sha=lambda _: local_digest(_) or "", download=pull, **options)

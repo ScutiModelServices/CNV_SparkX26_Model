@@ -103,3 +103,18 @@ def test_engine_from_env_is_off_without_a_url_and_serves_through_ollama_with_one
     reply = asyncio.run(engine.chat([{"role": "user", "content": "hi"}], project=None, temperature=0.0, max_tokens=9))
     assert reply["content"] == "Hello" and reply["model"] == "m"
     assert asyncio.run(engine.cached_sha()) == "abc"
+
+
+def test_a_saved_setting_applies_to_the_next_call_without_a_restart(url, monkeypatch):
+    monkeypatch.setenv("SPARK_OLLAMA_URL", url)
+    values = {"thinking": "off", "hide_reasoning": True}
+
+    class Saved:
+        def get(self, key):
+            return values[key]
+
+    engine = engine_from_env("SPARK_", SparkEngine, "m", settings=Saved())
+    ask = lambda: asyncio.run(engine.chat([{"role": "user", "content": "leak"}], project=None, temperature=0.0, max_tokens=9))
+    assert ask()["content"] == "Hi" and seen[-1][1]["think"] is False
+    values.update(thinking="on", hide_reasoning=False)
+    assert ask()["content"] == "reason</think> Hi" and seen[-1][1]["think"] is True

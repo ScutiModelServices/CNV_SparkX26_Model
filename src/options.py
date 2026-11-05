@@ -18,9 +18,9 @@ SETTINGS = [
             help="A Hugging Face repository. After a restart, download it from the Updates card"),
     Setting("dtype", "Number format", "text", "bfloat16", "SPARK_DTYPE", restart=True, blank=False,
             help="bfloat16 or float32. float32 is faster on CPUs without native bfloat16 maths but uses twice the memory"),
-    Setting("thinking", "Thinking (Ollama backend)", "text", "off", "SPARK_THINKING", restart=True, blank=False,
-            help="off or on. on lets the model think before it answers: slower, and it needs a model that supports thinking"),
-    Setting("hide_reasoning", "Hide reasoning written into the answer", "bool", True, "SPARK_HIDE_REASONING", restart=True,
+    Setting("thinking", "Thinking (Ollama backend)", "text", "off", "SPARK_THINKING", blank=False,
+            help="off or on. on lets the model think before it answers: slower, and it needs a model that supports thinking. Answers already in the cache are not recomputed"),
+    Setting("hide_reasoning", "Hide reasoning written into the answer", "bool", True, "SPARK_HIDE_REASONING",
             help="Drops everything before the last </think>. A streamed reply is then sent when complete, in one piece (Ollama backend)"),
     Setting("warm", "Load the model at start", "bool", True, "SPARK_WARM", restart=True),
 ]
