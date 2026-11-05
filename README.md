@@ -88,7 +88,7 @@ quantised GGUF and thinking turned off (about 6 to 7 tokens/s on the same CPU).
 2. Pull the model there: `ollama pull hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M`.
 3. Set `SPARK_OLLAMA_URL` and, if you use another model, `SPARK_OLLAMA_MODEL` in `.env`, then `docker compose up -d`.
 
-`SPARK_THINKING=on` lets the model think first (slower; the model must support thinking). Small models can also write reasoning into the answer and close it with `</think>`; `SPARK_HIDE_REASONING` (default on) drops that part, and the stream then arrives as one piece when complete. Both are also on the `/admin/` Settings card (restart to apply).
+`SPARK_THINKING=on` lets the model think first (slower; the model must support thinking). Small models can also write reasoning into the answer and close it with `</think>`; `SPARK_HIDE_REASONING` (default on) drops that part, and the stream then arrives as one piece when complete. Both are also on the `/admin/` Settings card (applied at once).
 
 Streaming, the answer cache, tokens and the admin page work as before. Project models and CPU threads are not forwarded to
 Ollama, and the update check only compares local digests (Download pulls again). Unset = the torch engine.

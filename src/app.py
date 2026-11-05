@@ -82,8 +82,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
     `max_inflight` and `cache_size` and keeps them live; without it they stay fixed."""
     tokens = tokens or TokenStore(os.environ.get("SPARK_TOKENS_FILE", "tokens.json"))
     client = client or engine_from_env("SPARK_", SparkEngine, DEFAULT_MODEL, marker=default_marker(),
-                                       thinking=config.get("thinking") if config else None,
-                                       hide_reasoning=config.get("hide_reasoning") if config else None) or SparkEngine(
+                                       settings=config) or SparkEngine(
         config.get("model") if config else os.environ.get("SPARK_MODEL", DEFAULT_MODEL),
         dtype=config.get("dtype") if config else "bfloat16", marker=default_marker())
     inflight = 0
@@ -391,7 +390,7 @@ def main() -> None:
     config = settings.Config(store.settings_path, SETTINGS)
     client = engine_from_env("SPARK_", SparkEngine, DEFAULT_MODEL, projects_dir=config.get("project_models_dir"),
                              max_projects=config.get("max_project_models"), marker=default_marker(),
-                             thinking=config.get("thinking"), hide_reasoning=config.get("hide_reasoning")) or SparkEngine(
+                             settings=config) or SparkEngine(
         config.get("model"), projects_dir=config.get("project_models_dir"),
         max_projects=config.get("max_project_models"), dtype=config.get("dtype"), marker=default_marker())
     saved = settings.load(store.settings_path)
