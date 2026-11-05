@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Optional Ollama backend: set `SPARK_OLLAMA_URL` (and `SPARK_OLLAMA_MODEL`) to answer through an Ollama server with a quantised GGUF, thinking off. Streaming, the answer cache and the admin page work as before; project models and CPU threads are not forwarded. Unset = the torch engine as before.
+
 - Admin **Try it** panel: descriptor-driven public API requests, live text streams, JSON/media output, status and latency, cancellation and redacted curl. Auth choice (b): pasted public token stays in memory; normal scope, limits and caches apply. Shared `web/playground.js` is copied across all model and tool services.
 
 - `run.bat`: runs `uv sync` directly; `python -m uv` failed when uv was installed only as a program (winget).

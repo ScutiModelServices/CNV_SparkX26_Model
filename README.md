@@ -77,3 +77,16 @@ uv run pytest
 Open `/admin/` and use **Try it** to call the public API with a service token held only in memory. Runs use normal token scopes, limits and caches; the panel shows HTTP status, latency, responses, cancellation and a curl equivalent with a token placeholder. See [the web UI guide](docs/guide-web-ui.md#try-it-send-a-real-request).
 
 Chat sends messages to `POST /v1/chat`, with optional project, temperature, max_tokens and streaming. Spark rejects tools, schema and thinking with 422; its form does not send those MiniCPM-only fields.
+
+## Faster on an old CPU: Ollama backend
+
+`transformers` in bf16 is very slow on a CPU without AVX2 or bf16 (about 0.4 tokens/s on an i5-3210M). Set `SPARK_OLLAMA_URL`
+(for example `http://host.docker.internal:11434`) and the service answers through an Ollama server instead, with a
+quantised GGUF and thinking turned off (about 6 to 7 tokens/s on the same CPU).
+
+1. Run Ollama 0.40.12 or newer (older ones fail with `unknown model architecture`), listening on `0.0.0.0`.
+2. Pull the model there: `ollama pull hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M`.
+3. Set `SPARK_OLLAMA_URL` and, if you use another model, `SPARK_OLLAMA_MODEL` in `.env`, then `docker compose up -d`.
+
+Streaming, the answer cache, tokens and the admin page work as before. Project models and CPU threads are not forwarded to
+Ollama, and the update check only compares local digests (Download pulls again). Unset = the torch engine.
