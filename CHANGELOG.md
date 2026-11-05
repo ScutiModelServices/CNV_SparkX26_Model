@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Ollama backend: `SPARK_THINKING` (`off` or `on`, also on the Settings card) and `SPARK_HIDE_REASONING` (default on). With hide on, reasoning the model wrote into its answer is dropped (everything before the last `</think>`) and a streamed reply is sent in one piece when complete. Turn it off to stream the raw text.
+
 - Optional Ollama backend: set `SPARK_OLLAMA_URL` (and `SPARK_OLLAMA_MODEL`) to answer through an Ollama server with a quantised GGUF, thinking off. Streaming, the answer cache and the admin page work as before; project models and CPU threads are not forwarded. Unset = the torch engine as before.
 
 - Admin **Try it** panel: descriptor-driven public API requests, live text streams, JSON/media output, status and latency, cancellation and redacted curl. Auth choice (b): pasted public token stays in memory; normal scope, limits and caches apply. Shared `web/playground.js` is copied across all model and tool services.

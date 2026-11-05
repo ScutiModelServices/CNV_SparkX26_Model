@@ -26,11 +26,13 @@ class FakeOllama(BaseHTTPRequestHandler):
         if body["stream"]:
             self.send_response(200)
             self.end_headers()
-            for piece in ({"message": {"content": "Hel"}}, {"message": {"content": "lo"}},
+            leak = body["messages"][-1]["content"] == "leak"  # a model that writes its reasoning into the answer
+            for piece in ({"message": {"content": "reason</think>Hi" if leak else "Hel"}}, {"message": {"content": "" if leak else "lo"}},
                           {"done": True, "done_reason": "stop", "prompt_eval_count": 7, "eval_count": 2}):
                 self.wfile.write(json.dumps(piece).encode() + b"\n")
         else:
-            self.send_json({"message": {"content": " Hello "}, "done": True, "prompt_eval_count": 7, "eval_count": 2})
+            leak = body["messages"][-1]["content"] == "leak"
+            self.send_json({"message": {"content": "reason</think> Hi " if leak else " Hello "}, "done": True, "prompt_eval_count": 7, "eval_count": 2})
 
     def send_json(self, data):
         raw = json.dumps(data).encode()
@@ -58,9 +60,33 @@ def test_chat_turns_thinking_off_and_maps_the_stats(url):
 
 
 def test_stream_yields_pieces_then_done(url):
-    events = list(OllamaLoaded(url, "m").stream([{"role": "user", "content": "hi"}], 0.0, 9, 5, threading.Event()))
+    events = list(OllamaLoaded(url, "m", hide_reasoning=False).stream([{"role": "user", "content": "hi"}], 0.0, 9, 5, threading.Event()))
     assert events == [("content", "Hel"), ("content", "lo"),
                       ("done", {"prompt_tokens": 7, "completion_tokens": 2, "finish": "stop"})]
+
+
+def test_thinking_on_is_sent_to_ollama(url):
+    OllamaLoaded(url, "m", thinking=True).generate([{"role": "user", "content": "hi"}], 0.0, 9, 5)
+    assert seen[-1][1]["think"] is True
+
+
+def test_reasoning_written_into_the_answer_is_hidden_and_the_reply_comes_as_one_piece(url):
+    loaded = OllamaLoaded(url, "m")
+    leak = [{"role": "user", "content": "leak"}]
+    assert loaded.generate(leak, 0.0, 9, 5)["content"] == "Hi"
+    events = list(loaded.stream(leak, 0.0, 9, 5, threading.Event()))
+    assert [e for e in events if e[0] == "content"] == [("content", "Hi")] and events[-1][0] == "done"
+    kept = OllamaLoaded(url, "m", hide_reasoning=False).generate(leak, 0.0, 9, 5)["content"]
+    assert kept == "reason</think> Hi"
+
+
+def test_settings_reach_the_loader_and_a_bad_thinking_value_is_refused(url, monkeypatch):
+    monkeypatch.setenv("SPARK_OLLAMA_URL", url)
+    engine = engine_from_env("SPARK_", SparkEngine, "m", thinking="on", hide_reasoning=False)
+    asyncio.run(engine.chat([{"role": "user", "content": "leak"}], project=None, temperature=0.0, max_tokens=9))
+    assert seen[-1][1]["think"] is True
+    with pytest.raises(ValueError):
+        engine_from_env("SPARK_", SparkEngine, "m", thinking="maybe")
 
 
 def test_an_unreachable_server_is_an_engine_error():
