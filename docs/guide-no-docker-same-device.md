@@ -18,7 +18,6 @@ uv sync
 uv run python src/app.py
 ```
 
-
 ## Settings
 `run.bat` and `app.py` read the real environment, **not** `.env`. Set variables before starting:
 

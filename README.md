@@ -71,7 +71,6 @@ uv run pytest
 - `TORCHDYNAMO_DISABLE=1` is set by the service; unpacking the weights otherwise tries to compile C++ and fails on
   machines without a compiler.
 
-
 ## Try it from the admin page
 
 Open `/admin/` and use **Try it** to call the public API with a service token held only in memory. Runs use normal token scopes, limits and caches; the panel shows HTTP status, latency, responses, cancellation and a curl equivalent with a token placeholder. See [the web UI guide](docs/guide-web-ui.md#try-it-send-a-real-request).
@@ -92,3 +91,12 @@ quantised GGUF and thinking turned off (about 6 to 7 tokens/s on the same CPU).
 
 Streaming, the answer cache, tokens and the admin page work as before. Project models and CPU threads are not forwarded to
 Ollama, and the update check only compares local digests (Download pulls again). Unset = the torch engine.
+
+## Documentation
+
+- [Purpose: input, output and what it is for](docs/purpose.md)
+- [Deployment](deployment.md)
+- [Changelog](CHANGELOG.md)
+- [Docker on another machine](docs/guide-docker-deployment-device.md)
+- [Docker on this PC](docs/guide-docker-same-device.md)
+- [Run without Docker](docs/guide-no-docker-same-device.md)
