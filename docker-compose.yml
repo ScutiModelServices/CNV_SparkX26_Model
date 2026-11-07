@@ -1,52 +1,62 @@
 # Spark service: N API replicas behind one nginx address. Each replica runs the model in its own process,
 # so RAM use is per replica; the downloaded weights are shared through the models volume.
-# Start:  docker compose up -d --build          (callers use http://<host>:9180)
-# Scale:  SPARK_REPLICAS=3 docker compose up -d --build, then: docker compose restart spark_lb
+# Start:  docker compose up -d --build          (callers use http://<host>:29203)
+# Scale:  SERVICE_REPLICAS=3 docker compose up -d --build, then: docker compose restart cnv_sparkx26_model_lb
 
-name: spark
+name: cnv_sparkx26_model
 
 services:
-  spark:
+  cnv_sparkx26_model:
     build: .
+    image: cnv_sparkx26_model:latest
     restart: unless-stopped
-    mem_limit: ${SPARK_MEM_LIMIT:-0}  # 0 = no cap; a cap makes an out-of-memory kill stay inside this container
+    mem_limit: ${SERVICE_MEM_LIMIT:-0}  # 0 = no cap; a cap makes an out-of-memory kill stay inside this container
     environment:
-      SPARK_ADMIN_PASSWORD: ${SPARK_ADMIN_PASSWORD:-}
-      SPARK_NUM_THREAD: ${SPARK_NUM_THREAD:-}
-      SPARK_REPLICAS: ${SPARK_REPLICAS:-1}  # shown read-only on /admin/
-      SPARK_OLLAMA_URL: ${SPARK_OLLAMA_URL:-}  # set = answer through this Ollama (GGUF) instead of torch
-      SPARK_OLLAMA_MODEL: ${SPARK_OLLAMA_MODEL:-}
-      SPARK_THINKING: ${SPARK_THINKING:-}  # off (default) or on, Ollama backend
-      SPARK_HIDE_REASONING: ${SPARK_HIDE_REASONING:-}  # empty = on
+      SERVICE_ADMIN_PASSWORD: ${SERVICE_ADMIN_PASSWORD:-}
+      SERVICE_NUM_THREAD: ${SERVICE_NUM_THREAD:-}
+      SERVICE_REPLICAS: ${SERVICE_REPLICAS:-1}  # shown read-only on /admin/
+      SERVICE_OLLAMA_URL: ${SERVICE_OLLAMA_URL:-}  # set = answer through this Ollama (GGUF) instead of torch
+      SERVICE_OLLAMA_MODEL: ${SERVICE_OLLAMA_MODEL:-}
+      SERVICE_THINKING: ${SERVICE_THINKING:-}  # off (default) or on, Ollama backend
+      SERVICE_HIDE_REASONING: ${SERVICE_HIDE_REASONING:-}  # empty = on
     extra_hosts: ["host.docker.internal:host-gateway"]  # reaches an Ollama running on the host
     volumes:
-      - models:/models
-      - tokens:/data
+      - cnv_sparkx26_model_models:/models
+      - cnv_sparkx26_model_data:/data
     deploy:
-      replicas: ${SPARK_REPLICAS:-1}
+      replicas: ${SERVICE_REPLICAS:-1}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9180/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:29203/health')"]
       interval: 15s
       timeout: 5s
       start_period: 300s
-    networks: [spark]
+    networks: [cnv_sparkx26_model]
 
-  spark_lb:
+  cnv_sparkx26_model_lb:
+    container_name: cnv_sparkx26_model_lb
     image: nginx:1.27-alpine
     restart: unless-stopped
     ports:
-      - "${SPARK_PORT:-9180}:9180"
+      - "${SERVICE_PORT:-29203}:29203"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      spark:
+      cnv_sparkx26_model:
         condition: service_healthy
-    networks: [spark]
+    networks:
+      cnv_sparkx26_model:
+      citadel:
+        aliases: [cnv_sparkx26_model_lb]
 
 volumes:
-  models:
-  tokens:
-
+  cnv_sparkx26_model_models:
+    name: cnv_sparkx26_model_models
+  cnv_sparkx26_model_data:
+    name: cnv_sparkx26_model_data
 networks:
-  # Other stacks reach http://spark_lb:9180 by joining this network.
-  spark:
+  # Other stacks reach http://cnv_sparkx26_model_lb:29203 by joining this network.
+  cnv_sparkx26_model:
+    name: cnv_sparkx26_model
+  citadel:
+    name: citadel_core
+    external: true

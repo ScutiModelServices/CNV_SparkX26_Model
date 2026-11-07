@@ -1,8 +1,8 @@
-# SparkX26Model
+# CNV_SparkX26_Model
 
 The one place Spark-X2.6-1.7B is served. Projects send it chat turns over HTTP instead of loading the
 model themselves. It has the same admin page, tokens, rate limits, metrics, settings and update checks as
-`BitNet2BModel`, `MiniCPM52BModel` and `LayaModel`.
+`CNV_BitNet2B_Model`, `CNV_MiniCPM52B_Model` and `DSC_Laya_Model`.
 
 Spark-X2.6-1.7B is run in this process on the CPU with `transformers` (`trust_remote_code`, so the model code comes from
 the Hugging Face repository). A 4-bit GGUF in a llama.cpp runtime is lighter and faster; this service keeps one
@@ -21,7 +21,7 @@ and finally `{"type": "done", ...}` holding the same body a call without `stream
 the first piece (a conversation that is too long, a full queue) is still a normal HTTP error; a failure after it is
 sent as `{"type": "error", "status", ...}` and ends the stream. A kept answer (see below) is streamed back in one piece.
 
-**Cache.** The *Answers kept per replica* setting (`SPARK_CACHE_SIZE`, default 256, 0 = off) keeps the last answers
+**Cache.** The *Answers kept per replica* setting (`SERVICE_CACHE_SIZE`, default 256, 0 = off) keeps the last answers
 for identical requests and sends them again without generating (`X-Cache: hit`). Only requests with `temperature` 0
 (the default) are kept, because a higher temperature asks for a different answer each time. Project model files are not watched (see the note on project models), so a replaced checkpoint is only noticed after a restart; new base weights empty the cache. The cache is per
 replica, so with N replicas the hit rate is about 1/N. `stream` does not change the key: a streamed answer fills the
@@ -31,7 +31,7 @@ cache for plain calls and the other way round.
 at most 4096 and the whole conversation must fit the model's context window (422 otherwise).
 
 **Not supported.** `tools`, `schema` and `thinking` are refused with 422, not ignored: this service sends plain chat turns with thinking switched off and has no
-constrained decoding. Use `MiniCPM52BModel` for those.
+constrained decoding. Use `CNV_MiniCPM52B_Model` for those.
 
 **Project models.** Optional `"project": "my-project"` (`^[a-z0-9][a-z0-9_-]{0,47}$`) uses the checkpoint folder
 `<project models folder>/my-project` when it holds a complete Hugging Face checkpoint of the same architecture
@@ -41,7 +41,7 @@ that answered. Replacing the files of an already loaded project needs a replica 
 
 ## Admin page
 
-`/admin/` (password `SPARK_ADMIN_PASSWORD`): per-project tokens with project scope, rate limit and expiry, usage
+`/admin/` (password `SERVICE_ADMIN_PASSWORD`): per-project tokens with project scope, rate limit and expiry, usage
 numbers, CPU threads, the Settings card (update check hours, in-flight cap, answers kept, project models), and the Updates card
 (**Check now** and **Download new weights** for the Hugging Face repository). New weights are downloaded once into
 the shared models volume; the other replicas notice within a few seconds and load them on their next request.
@@ -50,11 +50,11 @@ the shared models volume; the other replicas notice within a few seconds and loa
 ## Run
 
 ```bash
-docker compose up -d --build        # http://<host>:9180
+docker compose up -d --build        # http://<host>:29203
 ```
 
-Without Docker: `run.bat` (uv, listens on `127.0.0.1:9180`). The first start downloads about 4 GB. Each replica holds
-the model in RAM (about 5 GB), so `SPARK_REPLICAS` multiplies memory use. See `deployment.md`.
+Without Docker: `run.bat` (uv, listens on `127.0.0.1:29203`). The first start downloads about 4 GB. Each replica holds
+the model in RAM (about 5 GB), so `SERVICE_REPLICAS` multiplies memory use. See `deployment.md`.
 
 ## Tests
 
@@ -71,7 +71,6 @@ uv run pytest
 - `TORCHDYNAMO_DISABLE=1` is set by the service; unpacking the weights otherwise tries to compile C++ and fails on
   machines without a compiler.
 
-
 ## Try it from the admin page
 
 Open `/admin/` and use **Try it** to call the public API with a service token held only in memory. Runs use normal token scopes, limits and caches; the panel shows HTTP status, latency, responses, cancellation and a curl equivalent with a token placeholder. See [the web UI guide](docs/guide-web-ui.md#try-it-send-a-real-request).
@@ -80,15 +79,25 @@ Chat sends messages to `POST /v1/chat`, with optional project, temperature, max_
 
 ## Faster on an old CPU: Ollama backend
 
-`transformers` in bf16 is very slow on a CPU without AVX2 or bf16 (about 0.4 tokens/s on an i5-3210M). Set `SPARK_OLLAMA_URL`
+`transformers` in bf16 is very slow on a CPU without AVX2 or bf16 (about 0.4 tokens/s on an i5-3210M). Set `SERVICE_OLLAMA_URL`
 (for example `http://host.docker.internal:11434`) and the service answers through an Ollama server instead, with a
 quantised GGUF and thinking turned off (about 6 to 7 tokens/s on the same CPU).
 
 1. Run Ollama 0.40.12 or newer (older ones fail with `unknown model architecture`), listening on `0.0.0.0`.
 2. Pull the model there: `ollama pull hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M`.
-3. Set `SPARK_OLLAMA_URL` and, if you use another model, `SPARK_OLLAMA_MODEL` in `.env`, then `docker compose up -d`.
+3. Set `SERVICE_OLLAMA_URL` and, if you use another model, `SERVICE_OLLAMA_MODEL` in `.env`, then `docker compose up -d`.
 
-`SPARK_THINKING=on` lets the model think first (slower; the model must support thinking). Small models can also write reasoning into the answer and close it with `</think>`; `SPARK_HIDE_REASONING` (default on) drops that part, and the stream then arrives as one piece when complete. Both are also on the `/admin/` Settings card (applied at once).
+`SERVICE_THINKING=on` lets the model think first (slower; the model must support thinking). Small models can also write reasoning into the answer and close it with `</think>`; `SERVICE_HIDE_REASONING` (default on) drops that part, and the stream then arrives as one piece when complete. Both are also on the `/admin/` Settings card (applied at once).
 
 Streaming, the answer cache, tokens and the admin page work as before. Project models and CPU threads are not forwarded to
 Ollama, and the update check only compares local digests (Download pulls again). Unset = the torch engine.
+
+## Documentation
+
+- [Purpose: input, output and what it is for](docs/purpose.md)
+- [Deployment](deployment.md)
+- [Changelog](CHANGELOG.md)
+- [Docker on another machine](docs/guide-docker-deployment-device.md)
+- [Docker on this PC](docs/guide-docker-same-device.md)
+- [Run without Docker](docs/guide-no-docker-same-device.md)
+- [Test it from the command line](docs/guide-cli.md)

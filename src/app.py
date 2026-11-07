@@ -75,15 +75,15 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
                tokens: TokenStore | None = None, warm: bool = False,
                updates: Updates | None = None, check_hours: float = 0, max_inflight: int | None = None,
                cache_size: int | None = None, config: settings.Config | None = None) -> FastAPI:
-    """`admin_password` (SPARK_ADMIN_PASSWORD) unlocks /admin/, where each project gets a token of its own; when it
+    """`admin_password` (SERVICE_ADMIN_PASSWORD) unlocks /admin/, where each project gets a token of its own; when it
     is set, every call except /health must send one of those tokens in the X-Internal-Token header. Unset = no
-    auth at all (local use only). `tokens` holds the project tokens (SPARK_TOKENS_FILE). `cache_size` > 0 keeps that
-    many answers per replica (SPARK_CACHE_SIZE). `config` (the admin page's settings) replaces `warm`, `check_hours`,
+    auth at all (local use only). `tokens` holds the project tokens (SERVICE_TOKENS_FILE). `cache_size` > 0 keeps that
+    many answers per replica (SERVICE_CACHE_SIZE). `config` (the admin page's settings) replaces `warm`, `check_hours`,
     `max_inflight` and `cache_size` and keeps them live; without it they stay fixed."""
-    tokens = tokens or TokenStore(os.environ.get("SPARK_TOKENS_FILE", "tokens.json"))
-    client = client or engine_from_env("SPARK_", SparkEngine, DEFAULT_MODEL, marker=default_marker(),
+    tokens = tokens or TokenStore(os.environ.get("SERVICE_TOKENS_FILE", "tokens.json"))
+    client = client or engine_from_env("SERVICE_", SparkEngine, DEFAULT_MODEL, marker=default_marker(),
                                        settings=config) or SparkEngine(
-        config.get("model") if config else os.environ.get("SPARK_MODEL", DEFAULT_MODEL),
+        config.get("model") if config else os.environ.get("SERVICE_MODEL", DEFAULT_MODEL),
         dtype=config.get("dtype") if config else "bfloat16", marker=default_marker())
     inflight = 0
     cache = AnswerCache()
@@ -91,12 +91,12 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
     def cache_limit() -> int:
         """Answers this replica keeps; 0 = off."""
         return config.get("cache_size") if config else (
-            cache_size if cache_size is not None else int(os.environ.get("SPARK_CACHE_SIZE") or 0))
+            cache_size if cache_size is not None else int(os.environ.get("SERVICE_CACHE_SIZE") or 0))
 
     def inflight_limit() -> int:
         """Calls this replica lets wait for the model at once; more get 429. 0 = 4."""
         value = config.get("max_inflight") if config else (
-            max_inflight if max_inflight is not None else int(os.environ.get("SPARK_MAX_INFLIGHT") or 0))
+            max_inflight if max_inflight is not None else int(os.environ.get("SERVICE_MAX_INFLIGHT") or 0))
         return value or 4
 
     updates = updates or Updates(client.model, cached_sha=lambda: client.cached_sha(), remote_sha=lambda: client.remote_sha(),
@@ -177,7 +177,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
 
     def admin(x_internal_token: str = Header("")) -> None:
         if not admin_password or not hmac.compare_digest(x_internal_token, admin_password):
-            raise HTTPException(401, "Admin password required (set SPARK_ADMIN_PASSWORD)")
+            raise HTTPException(401, "Admin password required (set SERVICE_ADMIN_PASSWORD)")
 
     app = FastAPI(title="Spark-X2.6-1.7B service", lifespan=lifespan)
 
@@ -291,7 +291,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
 
     @app.put("/admin/threads", dependencies=[Depends(admin)])
     def set_threads(body: Threads) -> dict[str, Any]:
-        """Applies to this replica now and is saved; the other replicas apply it within a few seconds. It beats SPARK_NUM_THREAD."""
+        """Applies to this replica now and is saved; the other replicas apply it within a few seconds. It beats SERVICE_NUM_THREAD."""
         client.num_thread = body.num_thread
         settings.save(tokens.settings_path, num_thread=body.num_thread)
         return {"num_thread": client.num_thread}
@@ -303,7 +303,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
             value = os.environ.get(name, "").strip()
             return int(value) if value.isdigit() else None
 
-        return {"replicas": number("SPARK_REPLICAS"), "parallel": 1}
+        return {"replicas": number("SERVICE_REPLICAS"), "parallel": 1}
 
     @app.get("/admin/updates", dependencies=[Depends(admin)])
     async def update_status() -> dict[str, Any]:
@@ -376,7 +376,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
             raise HTTPException(404, "No such token")
         return {"ok": True}
 
-    web = Path(os.environ.get("SPARK_WEB_DIR", Path(__file__).resolve().parents[1] / "web"))
+    web = Path(os.environ.get("SERVICE_WEB_DIR", Path(__file__).resolve().parents[1] / "web"))
     if web.is_dir():
         app.mount("/admin", StaticFiles(directory=web, html=True))
 
@@ -384,22 +384,41 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
 
 
 def main() -> None:
+    import sys
+
     import uvicorn
 
-    store = TokenStore(os.environ.get("SPARK_TOKENS_FILE", "tokens.json"))
+    if "--dotenv" in sys.argv[1:]:  # run.bat asks for it; a plain `python src/app.py` and Docker never read .env
+        env_file = Path(__file__).resolve().parents[1] / ".env"
+        if env_file.is_file():
+            names = settings.load_env_file(env_file)
+            print(f".env: loaded {', '.join(names) or 'no variables'} (names only; a real environment variable wins)", flush=True)
+        else:
+            print(".env: no file in the service folder", flush=True)
+    settings.apply_models_dir()  # SERVICE_MODELS_DIR -> HF_HOME / OLLAMA_MODELS
+
+    store = TokenStore(os.environ.get("SERVICE_TOKENS_FILE", "tokens.json"))
     config = settings.Config(store.settings_path, SETTINGS)
-    client = engine_from_env("SPARK_", SparkEngine, DEFAULT_MODEL, projects_dir=config.get("project_models_dir"),
+    client = engine_from_env("SERVICE_", SparkEngine, DEFAULT_MODEL, projects_dir=config.get("project_models_dir"),
                              max_projects=config.get("max_project_models"), marker=default_marker(),
                              settings=config) or SparkEngine(
         config.get("model"), projects_dir=config.get("project_models_dir"),
         max_projects=config.get("max_project_models"), dtype=config.get("dtype"), marker=default_marker())
     saved = settings.load(store.settings_path)
-    threads = saved.get("num_thread") or os.environ.get("SPARK_NUM_THREAD", "").strip()
+    threads = saved.get("num_thread") or os.environ.get("SERVICE_NUM_THREAD", "").strip()
     if threads:
         client.num_thread = int(threads)
-    app = create_app(client=client, admin_password=os.environ.get("SPARK_ADMIN_PASSWORD") or None,
+    app = create_app(client=client, admin_password=os.environ.get("SERVICE_ADMIN_PASSWORD") or None,
                      tokens=store, config=config)
-    uvicorn.run(app, host=os.environ.get("SPARK_HOST", "127.0.0.1"), port=int(os.environ.get("SPARK_PORT", "9180")))
+    host, port = os.environ.get("SERVICE_HOST", "127.0.0.1"), int(os.environ.get("SERVICE_PORT", "29203"))
+
+    class Server(uvicorn.Server):
+        async def startup(self, sockets=None):
+            await super().startup(sockets)  # after uvicorn's own "running on" line
+            shown = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+            print(f"INFO:     Admin page: http://{shown}:{port}/admin/", flush=True)
+
+    Server(uvicorn.Config(app, host=host, port=port)).run()
 
 
 if __name__ == "__main__":
