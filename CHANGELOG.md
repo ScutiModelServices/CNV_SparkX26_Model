@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Default HTTP port moves from 9180 to 29203. Update explicit old ports in your real `.env`, saved tool-service `backends.json` connections, and browser/MCP client configurations once. Compose now uses 29203 inside API replicas and nginx; deployments using the old Compose default must recreate containers. A custom host-port override stays in effect until you change it; container ports still move to 29203.
+
 - Renamed `SparkX26Model` to `CNV_SparkX26_Model`; Docker project, API image, services, load balancer and volumes now use `cnv_sparkx26_model` names. Callers on `citadel_core` connect to `cnv_sparkx26_model_lb` at the existing port.
 - Docker volume migration: existing volumes with old names are orphaned; renaming does not move data. Stop the old stack before copying; never use `down -v`. The commands below assume the previous default Compose project name; substitute actual volume names if `-p` or `COMPOSE_PROJECT_NAME` overrode it.
   - `spark_models` → `cnv_sparkx26_model_models`: `docker volume inspect spark_models && docker volume create cnv_sparkx26_model_models && docker run --rm -v spark_models:/from:ro -v cnv_sparkx26_model_models:/to alpine:3.21 sh -c "cd /from && cp -a . /to/"`

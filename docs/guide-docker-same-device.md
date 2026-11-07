@@ -16,7 +16,7 @@ Run Spark-X2.6-1.7B on the CPU in Docker Desktop on the machine you work on, so 
    ```bash
    cp .env.example .env
    ```
-   Set `SPARK_ADMIN_PASSWORD` (empty = no auth and no admin page, fine for a local test). Leave `SPARK_PORT=9180`. Leave `SPARK_REPLICAS=1`.
+   Set `SPARK_ADMIN_PASSWORD` (empty = no auth and no admin page, fine for a local test). Leave `SPARK_PORT=29203`. Leave `SPARK_REPLICAS=1`.
 2. Start:
    ```bash
    docker compose up -d --build
@@ -25,18 +25,18 @@ Run Spark-X2.6-1.7B on the CPU in Docker Desktop on the machine you work on, so 
    (up to 300 s grace). Watch with `docker compose ps` and `docker compose logs -f cnv_sparkx26_model`.
 3. Check:
    ```bash
-   curl http://127.0.0.1:9180/health
+   curl http://127.0.0.1:29203/health
    ```
    `ready` is `false` until the model has loaded, then `true`.
-4. Open the admin page: `http://127.0.0.1:9180/admin/` (see [guide-web-ui.md](guide-web-ui.md)) and make a token for each caller.
+4. Open the admin page: `http://127.0.0.1:29203/admin/` (see [guide-web-ui.md](guide-web-ui.md)) and make a token for each caller.
 5. Try a call:
    ```bash
-   curl -X POST http://127.0.0.1:9180/v1/chat -H "Content-Type: application/json" -H "X-Internal-Token: spark_..." -d '{"messages":[{"role":"user","content":"Say hello in one sentence."}]}'
+   curl -X POST http://127.0.0.1:29203/v1/chat -H "Content-Type: application/json" -H "X-Internal-Token: spark_..." -d '{"messages":[{"role":"user","content":"Say hello in one sentence."}]}'
    ```
    Expect a JSON answer.
 6. Callers connect to the published port. The caller holds the URL and token:
-   - Caller on the host: `http://127.0.0.1:9180`.
-   - Caller in another Docker stack on the same host: `http://host.docker.internal:9180`.
+   - Caller on the host: `http://127.0.0.1:29203`.
+   - Caller in another Docker stack on the same host: `http://host.docker.internal:29203`.
 
 ## Settings
 
@@ -46,7 +46,7 @@ In `.env` next to `docker-compose.yml`:
 |---|---|---|
 | `SPARK_REPLICAS` | `1` | Number of `cnv_sparkx26_model` containers. Read by Compose. |
 | `SPARK_MEM_LIMIT` | `0` (no cap) | RAM cap per container, for example `7g` (bfloat16 weights use about 5.3 GiB). An out-of-memory kill then stays in the container instead of starving the host. Read by Compose. |
-| `SPARK_PORT` | `9180` | Host port `cnv_sparkx26_model_lb` publishes. |
+| `SPARK_PORT` | `29203` | Host port `cnv_sparkx26_model_lb` publishes. |
 | `SPARK_ADMIN_PASSWORD` | empty | Password for `/admin/`. When set, every call except `/health` must send a project token as `X-Internal-Token`. Empty = no auth. |
 | `SPARK_NUM_THREAD` | torch decides | Starting value for the CPU threads card; a value saved on `/admin/` wins. Use the number of physical cores (`lscpu`: cores x sockets), not logical CPUs; more threads than cores slows every call. |
 
@@ -70,7 +70,7 @@ docker compose up -d --build && docker compose restart cnv_sparkx26_model_lb   #
 
 | Symptom | Fix |
 |---|---|
-| `address already in use` on 9180 | Another copy (`run.bat`, or the same stack on another compose project) is running. Stop it or change `SPARK_PORT`. |
+| `address already in use` on 29203 | Another copy (`run.bat`, or the same stack on another compose project) is running. Stop it or change `SPARK_PORT`. |
 | `/health` shows `ready: false` for minutes | First start: the weights are downloading or loading. Check `docker compose logs -f cnv_sparkx26_model`. |
 | 401 Invalid token | The caller's token is missing or revoked; make one on `/admin/`. |
 | Container restarts in a loop | Out of RAM. Raise the Docker Desktop memory limit or lower the replica count. |
@@ -81,4 +81,4 @@ docker compose up -d --build && docker compose restart cnv_sparkx26_model_lb   #
 | Slow answers | CPU speed with `transformers` is modest for any model of this size; use a 4-bit GGUF runtime if speed matters. Raise CPU threads on `/admin/`. |
 | nginx 502 after scaling | `cnv_sparkx26_model_lb` not restarted after the replica count changed. |
 
-The load balancer also joins external `citadel_core` as `cnv_sparkx26_model_lb`. Start the Citadel stack first so that network exists; tool services on it use `http://cnv_sparkx26_model_lb:9180`. Docker project and API image are `cnv_sparkx26_model` and `cnv_sparkx26_model:latest`; persistent volumes have explicit `cnv_sparkx26_model_*` names. Volume migration and rollback instructions are in [CHANGELOG.md](../CHANGELOG.md).
+The load balancer also joins external `citadel_core` as `cnv_sparkx26_model_lb`. Start the Citadel stack first so that network exists; tool services on it use `http://cnv_sparkx26_model_lb:29203`. Docker project and API image are `cnv_sparkx26_model` and `cnv_sparkx26_model:latest`; persistent volumes have explicit `cnv_sparkx26_model_*` names. Volume migration and rollback instructions are in [CHANGELOG.md](../CHANGELOG.md).

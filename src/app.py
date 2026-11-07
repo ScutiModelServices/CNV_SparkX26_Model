@@ -409,7 +409,7 @@ def main() -> None:
         client.num_thread = int(threads)
     app = create_app(client=client, admin_password=os.environ.get("SPARK_ADMIN_PASSWORD") or None,
                      tokens=store, config=config)
-    uvicorn.run(app, host=os.environ.get("SPARK_HOST", "127.0.0.1"), port=int(os.environ.get("SPARK_PORT", "9180")))
+    uvicorn.run(app, host=os.environ.get("SPARK_HOST", "127.0.0.1"), port=int(os.environ.get("SPARK_PORT", "29203")))
 
 
 if __name__ == "__main__":
