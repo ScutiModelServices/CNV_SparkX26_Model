@@ -28,6 +28,7 @@ uv run python src/app.py
 | `SERVICE_ADMIN_PASSWORD` | empty | Unlocks `/admin/` and requires tokens on every call but `/health`. Empty = no auth. |
 | `SERVICE_WARM` | `1` | Load the model at start; with `0` the first request pays the load time. |
 | `SERVICE_NUM_THREAD` | the library decides | CPU threads. Set it to the number of **physical** cores. |
+| `SERVICE_MODELS_DIR` | the library's default cache | Folder for downloaded model weights. Sets `HF_HOME` (and `OLLAMA_MODELS` to `<folder>\ollama`) at start; a real `HF_HOME` or `OLLAMA_MODELS` wins. Docker keeps weights in the `_models` volume and ignores it. |
 
 PowerShell: `$env:SERVICE_ADMIN_PASSWORD = "secret"; .\run.bat`
 Bash: `SERVICE_ADMIN_PASSWORD=secret uv run python src/app.py`
