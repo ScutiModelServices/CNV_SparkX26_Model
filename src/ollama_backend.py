@@ -1,11 +1,11 @@
 """Answers through an Ollama server instead of running `transformers` in this process.
 
-Set `<PREFIX>OLLAMA_URL` (for example `LFM3_OLLAMA_URL=http://host.docker.internal:11434`) and the model name in
-`<PREFIX>OLLAMA_MODEL`. The engine class keeps its queue, answer cache and admin features; only the model behind it
+Set `SERVICE_OLLAMA_URL` (for example `SERVICE_OLLAMA_URL=http://host.docker.internal:11434`) and the model name in
+`SERVICE_OLLAMA_MODEL`. The engine class keeps its queue, answer cache and admin features; only the model behind it
 changes. Why: a quantised GGUF in llama.cpp is about 15 times faster than torch bf16 on a CPU without AVX2.
-Thinking is a setting (`<PREFIX>THINKING`, `off` or `on`). `off` sends `think: false`; `on` lets the model think first
+Thinking is a setting (`SERVICE_THINKING`, `off` or `on`). `off` sends `think: false`; `on` lets the model think first
 (Ollama keeps that part out of the answer; slower, and a model without thinking support is refused with 400).
-Small models can still write their reasoning into the answer and close it with `</think>`; with `<PREFIX>HIDE_REASONING`
+Small models can still write their reasoning into the answer and close it with `</think>`; with `SERVICE_HIDE_REASONING`
 on (default) everything up to the last `</think>` is dropped. A streamed reply is then sent as one piece when it is
 complete, because the reasoning cannot be told apart before the tag appears.
 

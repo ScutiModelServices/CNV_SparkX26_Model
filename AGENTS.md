@@ -1,6 +1,6 @@
 # CNV_SparkX26_Model
 
-Spark-X2.6-1.7B served over HTTP, behind the shared model-service admin page, tokens and settings. Port 29203, env prefix `SPARK_`, token prefix `spark_`.
+Spark-X2.6-1.7B served over HTTP, behind the shared model-service admin page, tokens and settings. Port 29203, env prefix `SERVICE_`, token prefix `spark_`.
 
 ## Agent instructions
 This file is the one instruction file for every coding agent; `CLAUDE.md` only imports it (`@AGENTS.md`). Edit this file, never `CLAUDE.md`.

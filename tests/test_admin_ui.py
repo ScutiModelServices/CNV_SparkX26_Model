@@ -27,7 +27,7 @@ def base_url():
     state = {"downloaded": False}
     engine = make_engine(cached_sha=lambda repo: "new" if state["downloaded"] else "old", remote_sha=lambda repo: "new",
                          download=lambda repo: state.update(downloaded=True))
-    config = Config(Path(os.environ["SPARK_TOKENS_FILE"]).with_name("settings.json"), SETTINGS)
+    config = Config(Path(os.environ["SERVICE_TOKENS_FILE"]).with_name("settings.json"), SETTINGS)
     config.set({"update_check_hours": 0, "warm": False})
     app = create_app(engine, PASSWORD, config=config)
     with socket.socket() as probe:

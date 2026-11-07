@@ -81,12 +81,12 @@ def test_reasoning_written_into_the_answer_is_hidden_and_the_reply_comes_as_one_
 
 
 def test_settings_reach_the_loader_and_a_bad_thinking_value_is_refused(url, monkeypatch):
-    monkeypatch.setenv("SPARK_OLLAMA_URL", url)
-    engine = engine_from_env("SPARK_", SparkEngine, "m", thinking="on", hide_reasoning=False)
+    monkeypatch.setenv("SERVICE_OLLAMA_URL", url)
+    engine = engine_from_env("SERVICE_", SparkEngine, "m", thinking="on", hide_reasoning=False)
     asyncio.run(engine.chat([{"role": "user", "content": "leak"}], project=None, temperature=0.0, max_tokens=9))
     assert seen[-1][1]["think"] is True
     with pytest.raises(ValueError):
-        engine_from_env("SPARK_", SparkEngine, "m", thinking="maybe")
+        engine_from_env("SERVICE_", SparkEngine, "m", thinking="maybe")
 
 
 def test_an_unreachable_server_is_an_engine_error():
@@ -95,25 +95,25 @@ def test_an_unreachable_server_is_an_engine_error():
 
 
 def test_engine_from_env_is_off_without_a_url_and_serves_through_ollama_with_one(url, monkeypatch):
-    monkeypatch.delenv("SPARK_OLLAMA_URL", raising=False)
-    assert engine_from_env("SPARK_", SparkEngine, "x") is None
-    monkeypatch.setenv("SPARK_OLLAMA_URL", url)
-    monkeypatch.setenv("SPARK_OLLAMA_MODEL", "m")
-    engine = engine_from_env("SPARK_", SparkEngine, "x")
+    monkeypatch.delenv("SERVICE_OLLAMA_URL", raising=False)
+    assert engine_from_env("SERVICE_", SparkEngine, "x") is None
+    monkeypatch.setenv("SERVICE_OLLAMA_URL", url)
+    monkeypatch.setenv("SERVICE_OLLAMA_MODEL", "m")
+    engine = engine_from_env("SERVICE_", SparkEngine, "x")
     reply = asyncio.run(engine.chat([{"role": "user", "content": "hi"}], project=None, temperature=0.0, max_tokens=9))
     assert reply["content"] == "Hello" and reply["model"] == "m"
     assert asyncio.run(engine.cached_sha()) == "abc"
 
 
 def test_a_saved_setting_applies_to_the_next_call_without_a_restart(url, monkeypatch):
-    monkeypatch.setenv("SPARK_OLLAMA_URL", url)
+    monkeypatch.setenv("SERVICE_OLLAMA_URL", url)
     values = {"thinking": "off", "hide_reasoning": True}
 
     class Saved:
         def get(self, key):
             return values[key]
 
-    engine = engine_from_env("SPARK_", SparkEngine, "m", settings=Saved())
+    engine = engine_from_env("SERVICE_", SparkEngine, "m", settings=Saved())
     ask = lambda: asyncio.run(engine.chat([{"role": "user", "content": "leak"}], project=None, temperature=0.0, max_tokens=9))
     assert ask()["content"] == "Hi" and seen[-1][1]["think"] is False
     values.update(thinking="on", hide_reasoning=False)

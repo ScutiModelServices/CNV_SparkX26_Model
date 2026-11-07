@@ -145,7 +145,7 @@ def test_requests_over_the_in_flight_limit_get_429():
 
 
 def test_workers_are_read_only_and_admin_only(monkeypatch):
-    monkeypatch.setenv("SPARK_REPLICAS", "3")
+    monkeypatch.setenv("SERVICE_REPLICAS", "3")
     c = client(admin_password="admin")
     assert c.get("/admin/workers").status_code == 401
     assert c.get("/admin/workers", headers={"X-Internal-Token": "admin"}).json() == {"replicas": 3, "parallel": 1}
@@ -236,10 +236,10 @@ def test_warmup_is_optional():
 def test_main_builds_the_engine_from_settings(monkeypatch, tmp_path):
     import app as module
 
-    monkeypatch.setenv("SPARK_TOKENS_FILE", str(tmp_path / "tokens.json"))
-    monkeypatch.setenv("SPARK_NUM_THREAD", "2")
-    monkeypatch.setenv("SPARK_PROJECT_MODELS_DIR", "/models/projects")
-    monkeypatch.setenv("SPARK_PORT", "9999")
+    monkeypatch.setenv("SERVICE_TOKENS_FILE", str(tmp_path / "tokens.json"))
+    monkeypatch.setenv("SERVICE_NUM_THREAD", "2")
+    monkeypatch.setenv("SERVICE_PROJECT_MODELS_DIR", "/models/projects")
+    monkeypatch.setenv("SERVICE_PORT", "9999")
     monkeypatch.setattr(module.SparkEngine, "num_thread", property(lambda self: None, lambda self, count: seen.append(count)))
     seen, started = [], {}
     monkeypatch.setattr("uvicorn.run", lambda app, host, port: started.update(app=app, host=host, port=port))
