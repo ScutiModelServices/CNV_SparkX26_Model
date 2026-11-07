@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Untracked folders now start with `.` or `_`: `zip_versions/` is `_zip_versions/`. A local `voices`, `tem_code` or `zip_versions` folder from an older checkout needs renaming by hand.
+- `run.bat` is now a menu (run the service, deploy, build the release ZIP) and `run.bat run|deploy|zip` skips it. `tools/deploy.bat`, `tools/make_zip.bat` and `tools/deploy.local.example.bat` are gone; the local deploy target is `tools/deploy.local.ini` (copy `tools/deploy.local.example.ini`).
 - Admin page: **Connect to this service** card with the addresses other services can use (this page's address, same PC, Docker network, `host.docker.internal`) and every endpoint, each with a Copy button.
 - Ollama backend: `SPARK_THINKING` (`off` or `on`, also on the Settings card) and `SPARK_HIDE_REASONING` (default on). With hide on, reasoning the model wrote into its answer is dropped (everything before the last `</think>`) and a streamed reply is sent in one piece when complete. Turn it off to stream the raw text.
 

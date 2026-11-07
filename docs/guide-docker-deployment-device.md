@@ -10,7 +10,7 @@ Run Spark-X2.6-1.7B on the CPU on a separate always-on machine (default `lex@scu
 
 ## 1. Publish the code (from your PC)
 
-Run `SparkX26Model\tools\deploy.bat`. Menu:
+Run `SparkX26Model\run.bat` and choose **Deploy** (or `run.bat deploy`). Menu:
 
 | Option | Does |
 |---|---|
@@ -21,7 +21,7 @@ Run `SparkX26Model\tools\deploy.bat`. Menu:
 | 6 | chown helper, if option 2 says `Permission denied` |
 | R | Release: publish, then tag `VERSION` |
 
-Keep your own target in the git-ignored `tools\deploy.local.bat` (copy `tools\deploy.local.example.bat`), or set
+Keep your own target in the git-ignored `tools\deploy.local.ini` (copy `tools\deploy.local.example.ini`), or set
 `DEPLOY_HOST`, `DEPLOY_DIR` and `DEPLOY_WEB_PORT` before running. Commit `main` first: publish reads committed `main`.
 
 ## 2. First-time setup on the machine
@@ -79,9 +79,9 @@ docker compose restart spark_lb
 
 ## Releasing
 
-A plain publish (`tools\deploy.bat` option 1) only updates the `live` branch. For a release set `VERSION` (and
-`pyproject.toml` to the same number), commit, then run `tools\deploy.bat` option R or
-`py tools\publish_live.py --release`. `tools\make_zip.bat` then builds `zip_versions\SparkX26Model-<VERSION>.zip`.
+A plain publish (`run.bat`, Deploy, option 1) only updates the `live` branch. For a release set `VERSION` (and
+`pyproject.toml` to the same number), commit, then run `run.bat`, Deploy, option R or
+`py tools\publish_live.py --release`. `run.bat`, Build the release ZIP, then builds `_zip_versions\SparkX26Model-<VERSION>.zip`.
 
 ## Problems
 
@@ -89,5 +89,5 @@ A plain publish (`tools\deploy.bat` option 1) only updates the `live` branch. Fo
 |---|---|
 | Caller cannot reach the service | Check the caller's URL and token, and that `curl http://<machine-ip>:9180/health` works. |
 | nginx 502 after an update | `docker compose restart spark_lb`. |
-| Permission denied on push | deploy.bat option 6. |
+| Permission denied on push | run.bat Deploy option 6. |
 | Port 9180 in use | Another stack on the machine already publishes it. |
