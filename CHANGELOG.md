@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Admin page: **Connect to this service** card with the addresses other services can use (this page's address, same PC, Docker network, `host.docker.internal`) and every endpoint, each with a Copy button.
 - Ollama backend: `SPARK_THINKING` (`off` or `on`, also on the Settings card) and `SPARK_HIDE_REASONING` (default on). With hide on, reasoning the model wrote into its answer is dropped (everything before the last `</think>`) and a streamed reply is sent in one piece when complete. Turn it off to stream the raw text.
 
 - Optional Ollama backend: set `SPARK_OLLAMA_URL` (and `SPARK_OLLAMA_MODEL`) to answer through an Ollama server with a quantised GGUF, thinking off. Streaming, the answer cache and the admin page work as before; project models and CPU threads are not forwarded. Unset = the torch engine as before.
