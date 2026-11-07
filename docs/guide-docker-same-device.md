@@ -1,4 +1,4 @@
-# SparkX26Model: Docker Desktop on this PC
+# CNV_SparkX26_Model: Docker Desktop on this PC
 
 Run Spark-X2.6-1.7B on the CPU in Docker Desktop on the machine you work on, so other programs on it can call it.
 
@@ -12,7 +12,7 @@ Run Spark-X2.6-1.7B on the CPU in Docker Desktop on the machine you work on, so 
 
 ## Steps
 
-1. Configure. In `SparkX26Model/`:
+1. Configure. In `CNV_SparkX26_Model/`:
    ```bash
    cp .env.example .env
    ```
@@ -21,8 +21,8 @@ Run Spark-X2.6-1.7B on the CPU in Docker Desktop on the machine you work on, so 
    ```bash
    docker compose up -d --build
    ```
-   The first start downloads about 4 GB of weights into the `models` volume. `spark_lb` starts only after the service is healthy
-   (up to 300 s grace). Watch with `docker compose ps` and `docker compose logs -f spark`.
+   The first start downloads about 4 GB of weights into the `cnv_sparkx26_model_models` volume. `cnv_sparkx26_model_lb` starts only after the service is healthy
+   (up to 300 s grace). Watch with `docker compose ps` and `docker compose logs -f cnv_sparkx26_model`.
 3. Check:
    ```bash
    curl http://127.0.0.1:9180/health
@@ -44,9 +44,9 @@ In `.env` next to `docker-compose.yml`:
 
 | Variable | Default | Effect |
 |---|---|---|
-| `SPARK_REPLICAS` | `1` | Number of `spark` containers. Read by Compose. |
+| `SPARK_REPLICAS` | `1` | Number of `cnv_sparkx26_model` containers. Read by Compose. |
 | `SPARK_MEM_LIMIT` | `0` (no cap) | RAM cap per container, for example `7g` (bfloat16 weights use about 5.3 GiB). An out-of-memory kill then stays in the container instead of starving the host. Read by Compose. |
-| `SPARK_PORT` | `9180` | Host port `spark_lb` publishes. |
+| `SPARK_PORT` | `9180` | Host port `cnv_sparkx26_model_lb` publishes. |
 | `SPARK_ADMIN_PASSWORD` | empty | Password for `/admin/`. When set, every call except `/health` must send a project token as `X-Internal-Token`. Empty = no auth. |
 | `SPARK_NUM_THREAD` | torch decides | Starting value for the CPU threads card; a value saved on `/admin/` wins. Use the number of physical cores (`lscpu`: cores x sockets), not logical CPUs; more threads than cores slows every call. |
 
@@ -55,15 +55,15 @@ value beats the environment variable named in brackets): update check hours (`SP
 in-flight cap (`SPARK_MAX_INFLIGHT`, 0 = 4), answers kept per replica (`SPARK_CACHE_SIZE`, 256, 0 = off), project models loaded per replica (`SPARK_MAX_PROJECT_MODELS`, 2),
 project models folder (`SPARK_PROJECT_MODELS_DIR`, empty = off; in Docker use `/models/projects`), base model
 (`SPARK_MODEL`, restart), number format (`SPARK_DTYPE`, restart: `bfloat16` or `float32`; try `float32` if answers take many seconds on a CPU without native bfloat16 maths, it needs twice the RAM) and load at start (`SPARK_WARM`, restart). Compose does not pass these; add the variable
-under `environment:` of `spark` to use one as a starting value.
+under `environment:` of `cnv_sparkx26_model` to use one as a starting value.
 
 ## Daily use
 
 ```bash
 docker compose ps          # state
-docker compose logs -f spark
+docker compose logs -f cnv_sparkx26_model
 docker compose down        # stop (the weights volume is kept)
-docker compose up -d --build && docker compose restart spark_lb   # after a code change
+docker compose up -d --build && docker compose restart cnv_sparkx26_model_lb   # after a code change
 ```
 
 ## Problems
@@ -71,12 +71,14 @@ docker compose up -d --build && docker compose restart spark_lb   # after a code
 | Symptom | Fix |
 |---|---|
 | `address already in use` on 9180 | Another copy (`run.bat`, or the same stack on another compose project) is running. Stop it or change `SPARK_PORT`. |
-| `/health` shows `ready: false` for minutes | First start: the weights are downloading or loading. Check `docker compose logs -f spark`. |
+| `/health` shows `ready: false` for minutes | First start: the weights are downloading or loading. Check `docker compose logs -f cnv_sparkx26_model`. |
 | 401 Invalid token | The caller's token is missing or revoked; make one on `/admin/`. |
 | Container restarts in a loop | Out of RAM. Raise the Docker Desktop memory limit or lower the replica count. |
-| `spark_lb` never starts | No replica is healthy yet (first download, or out of memory). `docker compose logs spark`. |
+| `cnv_sparkx26_model_lb` never starts | No replica is healthy yet (first download, or out of memory). `docker compose logs cnv_sparkx26_model`. |
 | Replicas restart in a loop | Out of RAM. Lower `SPARK_REPLICAS`. |
 | 422 on `tools`, `schema` or `thinking` | Not supported by this service. |
 | 429 | Over the token's rate limit, or too many calls waiting for the model. |
 | Slow answers | CPU speed with `transformers` is modest for any model of this size; use a 4-bit GGUF runtime if speed matters. Raise CPU threads on `/admin/`. |
-| nginx 502 after scaling | `spark_lb` not restarted after the replica count changed. |
+| nginx 502 after scaling | `cnv_sparkx26_model_lb` not restarted after the replica count changed. |
+
+The load balancer also joins external `citadel_core` as `cnv_sparkx26_model_lb`. Start the Citadel stack first so that network exists; tool services on it use `http://cnv_sparkx26_model_lb:9180`. Docker project and API image are `cnv_sparkx26_model` and `cnv_sparkx26_model:latest`; persistent volumes have explicit `cnv_sparkx26_model_*` names. Volume migration and rollback instructions are in [CHANGELOG.md](../CHANGELOG.md).

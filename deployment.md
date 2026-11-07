@@ -1,7 +1,7 @@
-# Deploying SparkX26Model
+# Deploying CNV_SparkX26_Model
 
-SparkX26Model is one HTTP service (port 9180). It runs as `spark` replicas behind an nginx load balancer,
-`spark_lb`. Callers use `http://<host>:9180`; they never reach a replica directly.
+CNV_SparkX26_Model is one HTTP service (port 9180). It runs as `cnv_sparkx26_model` replicas behind an nginx load balancer,
+`cnv_sparkx26_model_lb`. Callers use `http://<host>:9180`; they never reach a replica directly.
 
 ## Ways to run it
 

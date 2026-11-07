@@ -1,4 +1,4 @@
-# SparkX26Model: without Docker, on Windows
+# CNV_SparkX26_Model: without Docker, on Windows
 
 Run Spark-X2.6-1.7B on the CPU directly with Python: one process, no load balancer, listening on `127.0.0.1:9180`.
 
@@ -8,12 +8,12 @@ Run Spark-X2.6-1.7B on the CPU directly with Python: one process, no load balanc
 - RAM for the model (one copy).
 
 ## Start
-Double-click `run.bat`, or run it in a terminal from `SparkX26Model\`. Choose **1 Run the service** in the menu, or run `run.bat run` to skip the menu. It runs `uv sync` to create or update `.venv`, then starts
+Double-click `run.bat`, or run it in a terminal from `CNV_SparkX26_Model\`. Choose **1 Run the service** in the menu, or run `run.bat run` to skip the menu. It runs `uv sync` to create or update `.venv`, then starts
 `python src/app.py`. The first start downloads about 4 GB of weights.
 
 Linux or macOS:
 ```bash
-cd SparkX26Model
+cd CNV_SparkX26_Model
 uv sync
 uv run python src/app.py
 ```

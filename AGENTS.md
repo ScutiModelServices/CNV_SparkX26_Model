@@ -1,4 +1,4 @@
-# SparkX26Model
+# CNV_SparkX26_Model
 
 Spark-X2.6-1.7B served over HTTP, behind the shared model-service admin page, tokens and settings. Port 9180, env prefix `SPARK_`, token prefix `spark_`.
 
@@ -13,7 +13,7 @@ This file is the one instruction file for every coding agent; `CLAUDE.md` only i
 ## Rules
 - Follow the `model-service-parity` skill and `AI/ModelServices/_docs/SHARED-FEATURES.md` (what must match in every model service) and `AI/ModelServices/_docs/SERVICE-SPECIFIC.md` (what differs on purpose). A change to a shared feature goes to every service; a new difference goes into `SERVICE-SPECIFIC.md` in the same change.
 - `web/index.html`, `src/tokens.py`, `src/settings.py`, `src/updates.py` and `.dockerignore` are copies shared with the other model services. Change one, copy it to the others, run `python tools/check_sync.py` in each repo.
-- Built from BitNet2BModel like LFM3Model: same engine shape and 422 rules, `trust_remote_code`, thinking switched off through the chat template.
+- Built from CNV_BitNet2B_Model like CNV_LFM3_Model: same engine shape and 422 rules, `trust_remote_code`, thinking switched off through the chat template.
 - Pins `transformers==4.57.1`; keep it in `pyproject.toml` and `uv.lock`.
 - Behaviour changes update `README.md`, `deployment.md`, `docs/guide-web-ui.md`, `.env.example` and `CHANGELOG.md` in the same commit.
 - Never read or print `.env`, `tokens.json` or `settings.json`.

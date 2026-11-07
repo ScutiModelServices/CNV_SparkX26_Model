@@ -1,8 +1,8 @@
-# SparkX26Model
+# CNV_SparkX26_Model
 
 The one place Spark-X2.6-1.7B is served. Projects send it chat turns over HTTP instead of loading the
 model themselves. It has the same admin page, tokens, rate limits, metrics, settings and update checks as
-`BitNet2BModel`, `MiniCPM52BModel` and `LayaModel`.
+`CNV_BitNet2B_Model`, `CNV_MiniCPM52B_Model` and `DSC_Laya_Model`.
 
 Spark-X2.6-1.7B is run in this process on the CPU with `transformers` (`trust_remote_code`, so the model code comes from
 the Hugging Face repository). A 4-bit GGUF in a llama.cpp runtime is lighter and faster; this service keeps one
@@ -31,7 +31,7 @@ cache for plain calls and the other way round.
 at most 4096 and the whole conversation must fit the model's context window (422 otherwise).
 
 **Not supported.** `tools`, `schema` and `thinking` are refused with 422, not ignored: this service sends plain chat turns with thinking switched off and has no
-constrained decoding. Use `MiniCPM52BModel` for those.
+constrained decoding. Use `CNV_MiniCPM52B_Model` for those.
 
 **Project models.** Optional `"project": "my-project"` (`^[a-z0-9][a-z0-9_-]{0,47}$`) uses the checkpoint folder
 `<project models folder>/my-project` when it holds a complete Hugging Face checkpoint of the same architecture

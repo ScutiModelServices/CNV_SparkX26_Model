@@ -9,7 +9,7 @@ if /i "%~1"=="zip" goto zip
 
 :menu
 echo.
-echo SparkX26Model
+echo CNV_SparkX26_Model
 echo.
 echo   1  Run the service
 echo   2  Deploy ^(publish to live, push .env, release^)
@@ -46,7 +46,7 @@ rem git-ignored tools\deploy.local.ini (copy tools\deploy.local.example.ini) so 
 setlocal enabledelayedexpansion
 if exist "%~dp0tools\deploy.local.ini" for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%~dp0tools\deploy.local.ini") do set "%%A=%%B"
 if not defined DEPLOY_HOST set "DEPLOY_HOST=lex@scutiserver1.local"
-if not defined DEPLOY_DIR set "DEPLOY_DIR=/media/ZimaOS-HD/Apps/SparkX26Model"
+if not defined DEPLOY_DIR set "DEPLOY_DIR=/media/ZimaOS-HD/Apps/CNV_SparkX26_Model"
 if not defined DEPLOY_WEB_PORT set "DEPLOY_WEB_PORT=7681"
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 
@@ -111,7 +111,7 @@ echo Done.
 call :d_reminder ".env is on the server. In the web terminal:" "docker compose up -d --build" "(run git pull here first if the code changed)"
 exit /b 0
 
-rem :d_add <path relative to the SparkX26Model root, same path on the server>
+rem :d_add <path relative to the CNV_SparkX26_Model root, same path on the server>
 :d_add
 if not exist "%ROOT%\%~1" (echo skip    %~1 ^(missing locally^) & exit /b 0)
 >>"%LIST%" echo %~1
@@ -144,16 +144,16 @@ if not "%~3"=="" echo   %~3
 echo ----------------------------
 exit /b 0
 
-rem ---- ZIP: build _zip_versions\SparkX26Model-<VERSION>.zip, select it in Explorer, and open GitHub's new-release page for that tag
+rem ---- ZIP: build _zip_versions\CNV_SparkX26_Model-<VERSION>.zip, select it in Explorer, and open GitHub's new-release page for that tag
 rem so the zip can be dragged onto it. Run it after the release is tagged (Deploy, option R).
 :zip
 setlocal
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 py -3 "%ROOT%\tools\make_zip.py" || python "%ROOT%\tools\make_zip.py" || (echo ZIP creation failed. & pause & exit /b 1)
 set /p VER=<"%ROOT%\VERSION"
-start "" explorer /select,"%ROOT%\_zip_versions\SparkX26Model-%VER%.zip"
-start "" "https://github.com/ScutiModelServices/SparkX26Model/releases/new?tag=v%VER%"
+start "" explorer /select,"%ROOT%\_zip_versions\CNV_SparkX26_Model-%VER%.zip"
+start "" "https://github.com/ScutiModelServices/CNV_SparkX26_Model/releases/new?tag=v%VER%"
 echo.
-echo Drag _zip_versions\SparkX26Model-%VER%.zip onto the release page, paste the notes, and publish.
+echo Drag _zip_versions\CNV_SparkX26_Model-%VER%.zip onto the release page, paste the notes, and publish.
 pause
 exit /b 0

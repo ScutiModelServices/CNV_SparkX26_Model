@@ -1,4 +1,4 @@
-# SparkX26Model: the admin web UI
+# CNV_SparkX26_Model: the admin web UI
 
 One page, `/admin/`, for tokens and CPU threads. It is the same for every way of running the service (Docker
 on the same device, Docker on a deployment device, no Docker). Only the address differs:
@@ -49,7 +49,7 @@ are approximate. Request counts are added to the file with that same write; uses
 counted in memory, so a crash can lose up to a minute of them. Old token files without the field still load and show **never** until next use. A companion
 `tokens.json.lock` file serializes updates across replicas without adding dependencies.
 
-Tokens live in `tokens.json` (`SPARK_TOKENS_FILE`). In Docker that is the `tokens` volume at `/data`, so they
+Tokens live in `tokens.json` (`SPARK_TOKENS_FILE`). In Docker that is the `cnv_sparkx26_model_data` volume at `/data`, so they
 survive `docker compose down` and rebuilds. Without Docker it is `tokens.json` in the folder the service starts from.
 Tokens are enforced only while `SPARK_ADMIN_PASSWORD` is set.
 
@@ -73,7 +73,7 @@ The muted line says **Replicas: N. Change SPARK_REPLICAS in .env, then rebuild.*
 page cannot change them. To change, set them in `.env`, then:
 ```bash
 docker compose up -d --build
-docker compose restart spark_lb
+docker compose restart cnv_sparkx26_model_lb
 ```
 `unknown` means the variable is not set, which is normal without Docker. Without Docker there is one process.
 
@@ -111,7 +111,7 @@ Copy a complete checkpoint folder into the shared volume and set the **Project m
 to `/models/projects`:
 
 ```bash
-docker compose exec spark mkdir -p /models/projects
+docker compose exec cnv_sparkx26_model mkdir -p /models/projects
 docker compose cp ./garrison spark:/models/projects/garrison
 ```
 
@@ -122,7 +122,7 @@ Call `/v1/chat` with `"project": "garrison"`. Restart replicas after replacing a
 The **Updates** card compares the downloaded revision of the Hugging Face repository with its newest one. **Download
 new weights** fetches it into the models volume; every replica drops its old copy within a few seconds and loads the
 new one on its next request (it needs RAM for both for a moment). The download is the repository's current `main`.
-Updating the service itself: `docker compose up -d --build`, then `docker compose restart spark_lb`.
+Updating the service itself: `docker compose up -d --build`, then `docker compose restart cnv_sparkx26_model_lb`.
 
 ## Connect to this service
 

@@ -1,13 +1,14 @@
 # Spark service: N API replicas behind one nginx address. Each replica runs the model in its own process,
 # so RAM use is per replica; the downloaded weights are shared through the models volume.
 # Start:  docker compose up -d --build          (callers use http://<host>:9180)
-# Scale:  SPARK_REPLICAS=3 docker compose up -d --build, then: docker compose restart spark_lb
+# Scale:  SPARK_REPLICAS=3 docker compose up -d --build, then: docker compose restart cnv_sparkx26_model_lb
 
-name: spark
+name: cnv_sparkx26_model
 
 services:
-  spark:
+  cnv_sparkx26_model:
     build: .
+    image: cnv_sparkx26_model:latest
     restart: unless-stopped
     mem_limit: ${SPARK_MEM_LIMIT:-0}  # 0 = no cap; a cap makes an out-of-memory kill stay inside this container
     environment:
@@ -20,8 +21,8 @@ services:
       SPARK_HIDE_REASONING: ${SPARK_HIDE_REASONING:-}  # empty = on
     extra_hosts: ["host.docker.internal:host-gateway"]  # reaches an Ollama running on the host
     volumes:
-      - models:/models
-      - tokens:/data
+      - cnv_sparkx26_model_models:/models
+      - cnv_sparkx26_model_data:/data
     deploy:
       replicas: ${SPARK_REPLICAS:-1}
     healthcheck:
@@ -29,9 +30,10 @@ services:
       interval: 15s
       timeout: 5s
       start_period: 300s
-    networks: [spark]
+    networks: [cnv_sparkx26_model]
 
-  spark_lb:
+  cnv_sparkx26_model_lb:
+    container_name: cnv_sparkx26_model_lb
     image: nginx:1.27-alpine
     restart: unless-stopped
     ports:
@@ -39,14 +41,22 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      spark:
+      cnv_sparkx26_model:
         condition: service_healthy
-    networks: [spark]
+    networks:
+      cnv_sparkx26_model:
+      citadel:
+        aliases: [cnv_sparkx26_model_lb]
 
 volumes:
-  models:
-  tokens:
-
+  cnv_sparkx26_model_models:
+    name: cnv_sparkx26_model_models
+  cnv_sparkx26_model_data:
+    name: cnv_sparkx26_model_data
 networks:
-  # Other stacks reach http://spark_lb:9180 by joining this network.
-  spark:
+  # Other stacks reach http://cnv_sparkx26_model_lb:9180 by joining this network.
+  cnv_sparkx26_model:
+    name: cnv_sparkx26_model
+  citadel:
+    name: citadel_core
+    external: true

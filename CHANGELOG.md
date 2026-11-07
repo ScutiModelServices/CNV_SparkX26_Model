@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Renamed `SparkX26Model` to `CNV_SparkX26_Model`; Docker project, API image, services, load balancer and volumes now use `cnv_sparkx26_model` names. Callers on `citadel_core` connect to `cnv_sparkx26_model_lb` at the existing port.
+- Docker volume migration: existing volumes with old names are orphaned; renaming does not move data. Stop the old stack before copying; never use `down -v`. The commands below assume the previous default Compose project name; substitute actual volume names if `-p` or `COMPOSE_PROJECT_NAME` overrode it.
+  - `spark_models` → `cnv_sparkx26_model_models`: `docker volume inspect spark_models && docker volume create cnv_sparkx26_model_models && docker run --rm -v spark_models:/from:ro -v cnv_sparkx26_model_models:/to alpine:3.21 sh -c "cd /from && cp -a . /to/"`
+  - `spark_tokens` → `cnv_sparkx26_model_data`: `docker volume inspect spark_tokens && docker volume create cnv_sparkx26_model_data && docker run --rm -v spark_tokens:/from:ro -v cnv_sparkx26_model_data:/to alpine:3.21 sh -c "cd /from && cp -a . /to/"`
+- To retain an old volume instead, set its top-level volume definition to `external: true` and `name: <old-volume-name>` in a local Compose override. Rollback: stop the renamed stack, restore the previous checkout and folder name, and restart the old stack with its original volumes; copy back newer data first if the renamed stack accepted writes.
+
 - `run.bat` loads `.env` from the service folder for a local run: it passes `--dotenv`, the service prints which variable names it loaded (never the values), and a real environment variable still wins. A plain `python src/app.py` and Docker never read `.env`.
 - Untracked folders now start with `.` or `_`: `zip_versions/` is `_zip_versions/`. A local `voices`, `tem_code` or `zip_versions` folder from an older checkout needs renaming by hand.
 - `run.bat` is now a menu (run the service, deploy, build the release ZIP) and `run.bat run|deploy|zip` skips it. `tools/deploy.bat`, `tools/make_zip.bat` and `tools/deploy.local.example.bat` are gone; the local deploy target is `tools/deploy.local.ini` (copy `tools/deploy.local.example.ini`).
@@ -23,7 +29,7 @@
 
 - First version: Spark-X2.6-1.7B served on the CPU with `transformers`, with the admin page, project
   tokens (scope, rate limit, expiry), metrics, Settings card, update checks and weight downloads shared with
-  `BitNet2BModel`, `MiniCPM52BModel` and `LayaModel`.
+  `CNV_BitNet2B_Model`, `CNV_MiniCPM52B_Model` and `DSC_Laya_Model`.
 - `POST /v1/chat` takes `messages`, `project`, `temperature` and `max_tokens`. Tools, schemas and thinking are refused
   with 422.
 - Project models are checkpoint folders loaded in process (LRU).
