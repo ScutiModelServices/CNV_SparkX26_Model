@@ -100,3 +100,4 @@ Ollama, and the update check only compares local digests (Download pulls again).
 - [Docker on another machine](docs/guide-docker-deployment-device.md)
 - [Docker on this PC](docs/guide-docker-same-device.md)
 - [Run without Docker](docs/guide-no-docker-same-device.md)
+- [Test it from the command line](docs/guide-cli.md)
