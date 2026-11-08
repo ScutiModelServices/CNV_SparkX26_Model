@@ -153,6 +153,14 @@ def _flag(value: Any, name: str, default: bool) -> bool:
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
+
+def _parallel() -> int:
+    """Generations one replica runs at once: SERVICE_OLLAMA_PARALLEL (default 2), the OLLAMA_NUM_PARALLEL of your Ollama."""
+    raw = os.environ.get("SERVICE_OLLAMA_PARALLEL", "").strip() or "2"
+    if not raw.isdigit() or int(raw) < 1:
+        raise ValueError("SERVICE_OLLAMA_PARALLEL must be a whole number of 1 or more")
+    return int(raw)
+
 def engine_from_env(prefix: str, engine_class: type, default_model: str, thinking: str | None = None,
                     hide_reasoning: bool | None = None, settings: Any = None, **options: Any) -> Any:
     """Always build an Ollama engine; an explicitly empty URL is a configuration error."""
@@ -182,5 +190,5 @@ def engine_from_env(prefix: str, engine_class: type, default_model: str, thinkin
         if reply.get("status") != "success":
             raise _unavailable(model)
 
-    return engine_class(model, loader=lambda source: OllamaLoaded(url, source, thinking=mode == "on", hide_reasoning=hide, live=live),
+    return engine_class(model, parallel=_parallel(), loader=lambda source: OllamaLoaded(url, source, thinking=mode == "on", hide_reasoning=hide, live=live),
                         cached_sha=local_digest, remote_sha=lambda _: local_digest(_) or "", download=pull, **options)

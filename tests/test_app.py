@@ -45,6 +45,7 @@ def test_request_is_validated():
 
 def test_a_long_conversation_is_422_and_a_crash_is_500():
     class Broken:
+        parallel = 1
         async def chat(self, *args, **kwargs):
             raise error
 
@@ -144,7 +145,7 @@ def test_workers_are_read_only_and_admin_only(monkeypatch):
     monkeypatch.setenv("SERVICE_REPLICAS", "3")
     c = client(admin_password="admin")
     assert c.get("/admin/workers").status_code == 401
-    assert c.get("/admin/workers", headers={"X-Internal-Token": "admin"}).json() == {"replicas": 3, "parallel": 1}
+    assert c.get("/admin/workers", headers={"X-Internal-Token": "admin"}).json() == {"replicas": 3, "ollama_parallel": 1}
 
 
 def test_num_thread_is_saved_and_reported_without_backend_effect(tmp_path):

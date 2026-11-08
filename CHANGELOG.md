@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New `SERVICE_OLLAMA_PARALLEL` (default 2): generations one replica runs at once, like CNV_MiniCPM52B_Model. Before, each replica ran one at a time. Set it to the `OLLAMA_NUM_PARALLEL` of your Ollama; the in-flight cap defaults to 4 x this value.
 - Breaking: generation is now Ollama-only. Removed the torch/transformers backend, accelerate, CPU index and all weight-loader dependencies; no Hugging Face checkpoint loading remains.
 - Breaking: removed model, dtype, max_project_models and project_models_dir settings and the project request field (422). Project model folders are no longer used. Token project restrictions are removed: projects accepts only null or omission, lists return 422, and old restrictions are hidden in token listings.
 - SERVICE_OLLAMA_URL defaults to http://127.0.0.1:11434 locally and http://host.docker.internal:11434 in Compose; an explicitly empty value is an error. SERVICE_OLLAMA_MODEL remains startup-only.

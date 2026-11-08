@@ -250,3 +250,14 @@ def test_malformed_warmup_never_marks_backend_ready(monkeypatch):
     with pytest.raises(EngineError, match="start Ollama and pull m"):
         asyncio.run(engine.warm())
     assert not engine.ready
+
+
+def test_parallel_comes_from_service_ollama_parallel(monkeypatch):
+    monkeypatch.setenv("SERVICE_OLLAMA_URL", "http://127.0.0.1:11434")
+    monkeypatch.delenv("SERVICE_OLLAMA_PARALLEL", raising=False)
+    assert engine_from_env("SERVICE_", SparkEngine, "m").parallel == 2
+    monkeypatch.setenv("SERVICE_OLLAMA_PARALLEL", "4")
+    assert engine_from_env("SERVICE_", SparkEngine, "m").parallel == 4
+    monkeypatch.setenv("SERVICE_OLLAMA_PARALLEL", "0")
+    with pytest.raises(ValueError):
+        engine_from_env("SERVICE_", SparkEngine, "m")

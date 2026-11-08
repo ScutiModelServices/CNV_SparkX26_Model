@@ -20,6 +20,7 @@ Copy `.env.example` to `.env` for Compose. Saved admin settings override their e
 | `SERVICE_MEM_LIMIT` | 0 | API container memory cap; excludes Ollama. |
 | `SERVICE_OLLAMA_URL` | http://host.docker.internal:11434 | Required Ollama address; explicitly empty is invalid. |
 | `SERVICE_OLLAMA_MODEL` | hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M | Model selected at API startup. |
+| `SERVICE_OLLAMA_PARALLEL` | 2 | Generations one replica runs at once; set it to the `OLLAMA_NUM_PARALLEL` of your Ollama. |
 | `SERVICE_NUM_THREAD` | unset | Saved/reported card value only; Ollama chooses threads. |
 
 Settings card: update_check_hours (6), max_inflight (0 = 4), cache_size (256, 0 = off), thinking (off/on), hide_reasoning (true), warm (true, restart). Their environment defaults are SERVICE_UPDATE_CHECK_HOURS, SERVICE_MAX_INFLIGHT, SERVICE_CACHE_SIZE, SERVICE_THINKING, SERVICE_HIDE_REASONING and SERVICE_WARM. See [admin guide](guide-web-ui.md#settings).
