@@ -57,24 +57,15 @@ def test_a_long_conversation_is_422_and_a_crash_is_500():
         assert client(Broken()).post("/v1/chat", json=BODY).status_code == status
 
 
-def test_health_reports_readiness_and_projects(tmp_path):
-    (tmp_path / "garrison").mkdir()
-    (tmp_path / "garrison" / "config.json").write_text("{}")
-    engine = make_engine(projects_dir=str(tmp_path))
-    c = client(engine)
-    assert c.get("/health").json() == {"status": "ok", "model": "m", "ready": False, "num_thread": None,
-                                       "project_models": ["garrison"]}
+def test_health_reports_readiness():
+    c = client()
+    assert c.get("/health").json() == {"status": "ok", "model": "m", "ready": False, "num_thread": None}
     c.post("/v1/chat", json=BODY)
     assert c.get("/health").json()["ready"] is True
 
 
-def test_a_project_model_answers_and_a_missing_one_falls_back(tmp_path):
-    (tmp_path / "garrison").mkdir()
-    (tmp_path / "garrison" / "config.json").write_text("{}")
-    c = client(make_engine(projects_dir=str(tmp_path)))
-    assert c.post("/v1/chat", json={**BODY, "project": "garrison"}).json()["model"] == "garrison"
-    other = c.post("/v1/chat", json={**BODY, "project": "nobody"}).json()
-    assert other["model"] == "m" and other["fallback"] is True
+def test_removed_project_field_returns_422():
+    assert client().post("/v1/chat", json={**BODY, "project": "garrison"}).status_code == 422
 
 
 def test_each_project_gets_its_own_revocable_token(tmp_path):
@@ -90,16 +81,21 @@ def test_each_project_gets_its_own_revocable_token(tmp_path):
     assert c.get("/health").status_code == 200  # /health needs no token
 
 
-def test_a_token_limited_to_projects_refuses_other_projects(tmp_path):
-    c = client(admin_password="admin", tokens=TokenStore(tmp_path / "t.json"))
+def test_removed_token_project_restrictions_are_rejected_and_old_scopes_hidden(tmp_path):
+    store = TokenStore(tmp_path / "t.json")
+    old = store.create("old", ["app-a"], None, None)
+    c = client(admin_password="admin", tokens=store)
     admin = {"X-Internal-Token": "admin"}
-    assert c.post("/admin/tokens", json={"name": "x", "projects": ["Bad Name"]}, headers=admin).status_code == 422
-    made = c.post("/admin/tokens", json={"name": "p", "projects": ["app-b", "app-a"]}, headers=admin).json()
-    assert made["projects"] == ["app-a", "app-b"]
+    for restriction in ([], ["app-a"]):
+        assert c.post("/admin/tokens", json={"name": "p", "projects": restriction}, headers=admin).status_code == 422
+        assert c.put(f"/admin/tokens/{old['id']}", json={"projects": restriction}, headers=admin).status_code == 422
+    listed = c.get("/admin/tokens", headers=admin).json()["tokens"]
+    assert listed[0]["projects"] is None
+    assert c.put(f"/admin/tokens/{old['id']}", json={"projects": None}, headers=admin).status_code == 200
+    made = c.post("/admin/tokens", json={"name": "p", "projects": None}, headers=admin).json()
     use = {"X-Internal-Token": made["token"]}
-    assert c.post("/v1/chat", json={**BODY, "project": "app-a"}, headers=use).status_code == 200
-    assert c.post("/v1/chat", json={**BODY, "project": "other"}, headers=use).status_code == 403
-    assert c.post("/v1/chat", json=BODY, headers=use).status_code == 200  # no project is always allowed
+    assert c.post("/v1/chat", json=BODY, headers=use).status_code == 200
+    assert c.post("/v1/chat", json={**BODY, "project": "app-a"}, headers=use).status_code == 422
 
 
 def test_rate_limit_edit_stats_and_metrics(tmp_path):
@@ -111,7 +107,7 @@ def test_rate_limit_edit_stats_and_metrics(tmp_path):
     assert c.post("/v1/chat", json=BODY, headers=use).status_code == 200
     limited = c.post("/v1/chat", json=BODY, headers=use)
     assert limited.status_code == 429 and int(limited.headers["Retry-After"]) >= 1
-    assert c.put(f"/admin/tokens/{made['id']}", json={"projects": ["a"], "rate": None}, headers=admin).status_code == 200
+    assert c.put(f"/admin/tokens/{made['id']}", json={"projects": None, "rate": None}, headers=admin).status_code == 200
     assert c.post("/v1/chat", json=BODY, headers=use).status_code == 200  # the limit is gone
     assert c.put("/admin/tokens/nope", json={}, headers=admin).status_code == 404
     assert store.list()[0]["timed"] >= 1
@@ -151,14 +147,13 @@ def test_workers_are_read_only_and_admin_only(monkeypatch):
     assert c.get("/admin/workers", headers={"X-Internal-Token": "admin"}).json() == {"replicas": 3, "parallel": 1}
 
 
-def test_num_thread_is_reported_and_set_by_the_admin(tmp_path):
-    seen = []
-    engine = make_engine(set_threads=seen.append)
+def test_num_thread_is_saved_and_reported_without_backend_effect(tmp_path):
+    engine = make_engine()
     c = client(engine, "admin", tokens=TokenStore(tmp_path / "t.json"))
     admin = {"X-Internal-Token": "admin"}
     assert c.put("/admin/threads", json={"num_thread": 0}, headers=admin).status_code == 422
     assert c.put("/admin/threads", json={"num_thread": 3}, headers=admin).json() == {"num_thread": 3}
-    assert seen == [3] and c.get("/health").json()["num_thread"] == 3
+    assert c.get("/health").json()["num_thread"] == 3
     assert settings.load(tmp_path / "settings.json")["num_thread"] == 3
 
 
@@ -180,15 +175,14 @@ def test_what_another_replica_saved_reaches_this_one(tmp_path):
     store = TokenStore(tmp_path / "t.json")
     config = settings.Config(store.settings_path, SETTINGS)
     config.set({"update_check_hours": 0, "warm": False})
-    seen = []
-    engine = make_engine(set_threads=seen.append)
+    engine = make_engine()
     with TestClient(create_app(engine, "admin", tokens=store, config=config)):
-        settings.save(store.settings_path, num_thread=5, project_models_dir=str(tmp_path), max_project_models=3)
-        for _ in range(300):  # the loop looks every second
-            if engine.max_projects == 3:
+        settings.save(store.settings_path, num_thread=5)
+        for _ in range(300):
+            if engine.num_thread == 5:
                 break
             time.sleep(0.02)
-    assert seen == [5] and engine.projects_dir == str(tmp_path) and engine.max_projects == 3
+    assert engine.num_thread == 5
 
 
 def test_startup_warms_the_model():
@@ -238,7 +232,6 @@ def test_main_builds_the_engine_from_settings(monkeypatch, tmp_path):
 
     monkeypatch.setenv("SERVICE_TOKENS_FILE", str(tmp_path / "tokens.json"))
     monkeypatch.setenv("SERVICE_NUM_THREAD", "2")
-    monkeypatch.setenv("SERVICE_PROJECT_MODELS_DIR", "/models/projects")
     monkeypatch.setenv("SERVICE_PORT", "9999")
     monkeypatch.setattr(module.SparkEngine, "num_thread", property(lambda self: None, lambda self, count: seen.append(count)))
     seen, started = [], {}
@@ -292,16 +285,12 @@ def test_only_temperature_zero_is_kept_and_the_cache_can_be_off():
     assert [off.post("/v1/chat", json=BODY).headers["X-Cache"] for _ in range(2)] == ["miss", "miss"]
 
 
-def test_the_cache_is_not_used_after_the_weights_were_replaced_and_keeps_projects_apart(tmp_path):
-    (tmp_path / "p1").mkdir()
-    (tmp_path / "p1" / "config.json").write_text("{}")
-    engine = make_engine(projects_dir=str(tmp_path))
+def test_cache_is_not_used_after_weights_are_replaced():
+    engine = make_engine()
     c = client(engine, cache_size=8)
     c.post("/v1/chat", json=BODY)
     assert c.post("/v1/chat", json=BODY).headers["X-Cache"] == "hit"
-    assert c.post("/v1/chat", json={**BODY, "project": "p1"}).headers["X-Cache"] == "miss"  # its own model
-    assert c.post("/v1/chat", json={**BODY, "project": "gone"}).headers["X-Cache"] == "hit"  # falls back to the base answer
-    asyncio.run(engine.unload())  # new weights
+    asyncio.run(engine.unload())
     assert c.post("/v1/chat", json=BODY).headers["X-Cache"] == "miss"
 
 
@@ -326,3 +315,19 @@ def test_cache_size_is_a_setting_that_applies_live(tmp_path):
     assert [c.post("/v1/chat", json=BODY, headers=use).headers["X-Cache"] for _ in range(2)] == ["miss", "hit"]
     assert c.put("/admin/settings", json={"values": {"cache_size": 0}}, headers=admin).status_code == 200
     assert c.post("/v1/chat", json=BODY, headers=use).headers["X-Cache"] == "miss"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_unreachable_ollama_leaves_service_available_with_clear_503(monkeypatch, stream):
+    from ollama_backend import engine_from_env
+    from engine import SparkEngine
+    monkeypatch.setenv("SERVICE_OLLAMA_URL", "http://127.0.0.1:1/private")
+    engine = engine_from_env("SERVICE_", SparkEngine, "m")
+    with TestClient(create_app(engine, warm=True)) as c:
+        assert c.get("/health").status_code == 200
+        assert c.get("/health").json()["ready"] is False
+        assert c.get("/admin/").status_code == 200
+        reply = c.post("/v1/chat", json={**BODY, "stream": stream})
+        assert reply.status_code == 503
+        assert "start Ollama and pull m" in reply.json()["detail"]
+        assert "127.0.0.1" not in reply.text and "private" not in reply.text

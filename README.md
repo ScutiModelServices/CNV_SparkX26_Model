@@ -1,96 +1,58 @@
 # CNV_SparkX26_Model
 
-The one place Spark-X2.6-1.7B is served. Projects send it chat turns over HTTP instead of loading the
-model themselves. It has the same admin page, tokens, rate limits, metrics, settings and update checks as
-`CNV_BitNet2B_Model`, `CNV_MiniCPM52B_Model` and `DSC_Laya_Model`.
-
-Spark-X2.6-1.7B is run in this process on the CPU with `transformers` (`trust_remote_code`, so the model code comes from
-the Hugging Face repository). A 4-bit GGUF in a llama.cpp runtime is lighter and faster; this service keeps one
-engine shape for all LLM services instead.
+Spark-X2.6-1.7B chat over HTTP through Ollama, port 29203. API replicas share one Ollama model; they do not load weights themselves. No dedicated tool service is required.
 
 ## API
 
 | Call | Purpose |
 |---|---|
-| `POST /v1/chat` | `{"messages", "project", "temperature", "max_tokens", "stream"}` → `{"content", "finish_reason", "model", "fallback", "usage", "duration_ms"}`. |
-| `GET /health` | `{"status": "ok", "model", "ready", "num_thread", "project_models"}`; `ready` is true once the base model is loaded. No token needed. |
+| `POST /v1/chat` | `messages`, optional `temperature`, `max_tokens`, `stream` → content, finish_reason, model, fallback, usage, duration_ms. |
+| `GET /health` | Public status, model, ready and num_thread. |
 
-**Streaming.** With `"stream": true` the reply is `application/x-ndjson`: one JSON object per line while the answer is
-made, so the first words arrive at once instead of after the whole answer. Lines are `{"type": "content", "text"}`
-and finally `{"type": "done", ...}` holding the same body a call without `stream` returns. A refusal before
-the first piece (a conversation that is too long, a full queue) is still a normal HTTP error; a failure after it is
-sent as `{"type": "error", "status", ...}` and ends the stream. A kept answer (see below) is streamed back in one piece.
+**Input.** One to 64 messages with system, user or assistant role; each content is at most 100,000 characters. Temperature is 0–2; max_tokens is 1–4096 (default 512). Unknown fields, including `project`, `tools`, `schema` and request-level `thinking`, return 422. `fallback` remains false for response compatibility.
 
-**Cache.** The *Answers kept per replica* setting (`SERVICE_CACHE_SIZE`, default 256, 0 = off) keeps the last answers
-for identical requests and sends them again without generating (`X-Cache: hit`). Only requests with `temperature` 0
-(the default) are kept, because a higher temperature asks for a different answer each time. Project model files are not watched (see the note on project models), so a replaced checkpoint is only noticed after a restart; new base weights empty the cache. The cache is per
-replica, so with N replicas the hit rate is about 1/N. `stream` does not change the key: a streamed answer fills the
-cache for plain calls and the other way round.
+**Streaming.** `stream: true` returns NDJSON content lines then done with the full result. Before the first piece, upstream unavailability returns HTTP 503 with “start Ollama and pull <model>”. Later errors become error lines. With hide_reasoning enabled (default), content is held until completion and text before the last `</think>` is removed.
 
-`messages` use the roles `system`, `user` and `assistant`. `temperature` 0 (the default) is greedy. `max_tokens` is
-at most 4096 and the whole conversation must fit the model's context window (422 otherwise).
+**Cache.** Only temperature 0 answers are cached, per replica; `X-Cache` reports hit or miss. Plain and streamed calls share cached answers. Thinking and reasoning-visibility settings select separate cached answers. A model pull advances cache generation across replicas through a marker in the data volume.
 
-**Not supported.** `tools`, `schema` and `thinking` are refused with 422, not ignored: this service sends plain chat turns with thinking switched off and has no
-constrained decoding. Use `CNV_MiniCPM52B_Model` for those.
-
-**Project models.** Optional `"project": "my-project"` (`^[a-z0-9][a-z0-9_-]{0,47}$`) uses the checkpoint folder
-`<project models folder>/my-project` when it holds a complete Hugging Face checkpoint of the same architecture
-(`config.json`, weights, tokenizer). Up to *Project models loaded per replica* stay in memory, least recently used out
-first. A missing or unloadable project uses the base model and returns `"fallback": true`. `model` names the model
-that answered. Replacing the files of an already loaded project needs a replica restart.
+**Tokens.** Set SERVICE_ADMIN_PASSWORD and create a caller token on the admin page. Send X-Internal-Token. Token project restrictions are removed: projects accepts null or omission only (lists return 422). Old scope metadata is hidden in token listings. Rate limits and expiry still apply.
 
 ## Admin page
 
-`/admin/` (password `SERVICE_ADMIN_PASSWORD`): per-project tokens with project scope, rate limit and expiry, usage
-numbers, CPU threads, the Settings card (update check hours, in-flight cap, answers kept, project models), and the Updates card
-(**Check now** and **Download new weights** for the Hugging Face repository). New weights are downloaded once into
-the shared models volume; the other replicas notice within a few seconds and load them on their next request.
-`/metrics` (admin password) is Prometheus text per token. `spark_request_seconds` is a histogram of how long each `/v1` call took on the replica that answers (to the first byte for a streamed reply); it starts from 0 when the replica restarts.
+`/admin/` provides tokens, usage, metrics, replicas, Settings and Updates. CPU threads are saved and reported only; Ollama chooses its own threads. Settings retain thinking, hide_reasoning, cache_size, max_inflight, update_check_hours and warm. Updates shows installed Ollama digests without checking newer registry versions; Download remains available and always runs an Ollama pull and invalidates every replica's cached answers. `GET /metrics` requires the admin password.
 
 ## Run
 
+Start Ollama and pull the configured model first:
+
 ```bash
-docker compose up -d --build        # http://<host>:29203
+ollama pull hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M
 ```
 
-Without Docker: `run.bat` (uv, listens on `127.0.0.1:29203`). The first start downloads about 4 GB. Each replica holds
-the model in RAM (about 5 GB), so `SERVICE_REPLICAS` multiplies memory use. See `deployment.md`.
+```bash
+docker compose up -d --build
+```
+
+Compose defaults SERVICE_OLLAMA_URL to http://host.docker.internal:11434. A local run defaults to http://127.0.0.1:11434 when unset. An explicitly empty URL fails configuration. SERVICE_OLLAMA_MODEL selects the model at startup. Without Docker, use `run.bat run` or `uv run python src/app.py`. See [deployment](deployment.md).
 
 ## Tests
 
 ```bash
-uv sync
 uv run pytest
 ```
 
+Tests inject fake loaders and a local fake Ollama; they need no real model.
+
 ## Limits worth knowing
 
-- One generation at a time per replica; extra calls wait, and more than the in-flight cap get 429.
-- The rate limit is per replica.
-- A generation stops after 120 s and returns what it has with `finish_reason: "length"`.
-- `TORCHDYNAMO_DISABLE=1` is set by the service; unpacking the weights otherwise tries to compile C++ and fails on
-  machines without a compiler.
+- One generation per replica; max_inflight defaults to four waiting/running calls. Excess calls receive 429 with Retry-After.
+- Ollama owns model RAM, hardware choice and parallelism. API replica count does not multiply model memory.
+- Warm-up runs in the background. Missing or unreachable Ollama leaves health and admin available, ready false, and chat returns 503. Next chat retries.
+- Real Ollama generation and Docker image builds have not been verified for this migration.
 
 ## Try it from the admin page
 
-Open `/admin/` and use **Try it** to call the public API with a service token held only in memory. Runs use normal token scopes, limits and caches; the panel shows HTTP status, latency, responses, cancellation and a curl equivalent with a token placeholder. See [the web UI guide](docs/guide-web-ui.md#try-it-send-a-real-request).
-
-Chat sends messages to `POST /v1/chat`, with optional project, temperature, max_tokens and streaming. Spark rejects tools, schema and thinking with 422; its form does not send those MiniCPM-only fields.
-
-## Faster on an old CPU: Ollama backend
-
-`transformers` in bf16 is very slow on a CPU without AVX2 or bf16 (about 0.4 tokens/s on an i5-3210M). Set `SERVICE_OLLAMA_URL`
-(for example `http://host.docker.internal:11434`) and the service answers through an Ollama server instead, with a
-quantised GGUF and thinking turned off (about 6 to 7 tokens/s on the same CPU).
-
-1. Run Ollama 0.40.12 or newer (older ones fail with `unknown model architecture`), listening on `0.0.0.0`.
-2. Pull the model there: `ollama pull hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M`.
-3. Set `SERVICE_OLLAMA_URL` and, if you use another model, `SERVICE_OLLAMA_MODEL` in `.env`, then `docker compose up -d`.
-
-`SERVICE_THINKING=on` lets the model think first (slower; the model must support thinking). Small models can also write reasoning into the answer and close it with `</think>`; `SERVICE_HIDE_REASONING` (default on) drops that part, and the stream then arrives as one piece when complete. Both are also on the `/admin/` Settings card (applied at once).
-
-Streaming, the answer cache, tokens and the admin page work as before. Project models and CPU threads are not forwarded to
-Ollama, and the update check only compares local digests (Download pulls again). Unset = the torch engine.
+Open `/admin/`, sign in and paste a public token in Try it. Chat sends messages, temperature, max_tokens and streaming to `/v1/chat`. The panel shows status, timing, cancellation and a redacted curl command. See [web UI guide](docs/guide-web-ui.md#try-it-send-a-real-request).
 
 ## Documentation
 

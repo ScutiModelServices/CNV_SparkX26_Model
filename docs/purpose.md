@@ -4,15 +4,13 @@
 
 **Group:** Conversation
 
-**Tags:** `cpu`, `streaming`, `project-models`
+**Tags:** `cpu`, `streaming`
 
 | | |
 |---|---|
-| Input | Chat messages, temperature, max tokens, project. |
-| Output | JSON: content, finish reason, usage. Streamable. |
-| Runs on | CPU (`transformers`, Spark-X2.6-1.7B). |
+| Input | Chat messages, temperature, max tokens and stream. |
+| Output | JSON content, finish reason, usage; NDJSON streaming. |
+| Runs on | API on CPU; Spark-X2.6-1.7B runs in external Ollama using its configured hardware. Memory has not been measured for this deployment. |
 
-Same API as BitNet and LFM3.
-
-**Use for:** third small chat model; A/B candidate for project fine-tunes.
-**Not for:** tool calls, schemas, thinking (all return 422).
+**Use for:** small-model chat through a shared Ollama service.
+**Not for:** project checkpoint selection, tool calls, schemas or request-level thinking (422).

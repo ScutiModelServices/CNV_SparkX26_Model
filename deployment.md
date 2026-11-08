@@ -1,6 +1,6 @@
 # Deploying CNV_SparkX26_Model
 
-CNV_SparkX26_Model is one HTTP service (port 29203). It runs as `cnv_sparkx26_model` replicas behind an nginx load balancer,
+CNV_SparkX26_Model is one HTTP service (port 29203). It uses a separate Ollama and runs as `cnv_sparkx26_model` replicas behind an nginx load balancer,
 `cnv_sparkx26_model_lb`. Callers use `http://<host>:29203`; they never reach a replica directly.
 
 ## Ways to run it

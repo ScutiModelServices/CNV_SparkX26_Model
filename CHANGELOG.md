@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-- `SERVICE_MODELS_DIR` sets where a local (no Docker) run keeps downloaded model weights: `settings.apply_models_dir()` maps it to `HF_HOME` and `OLLAMA_MODELS` at start.
+- Breaking: generation is now Ollama-only. Removed the torch/transformers backend, accelerate, CPU index and all weight-loader dependencies; no Hugging Face checkpoint loading remains.
+- Breaking: removed model, dtype, max_project_models and project_models_dir settings and the project request field (422). Project model folders are no longer used. Token project restrictions are removed: projects accepts only null or omission, lists return 422, and old restrictions are hidden in token listings.
+- SERVICE_OLLAMA_URL defaults to http://127.0.0.1:11434 locally and http://host.docker.internal:11434 in Compose; an explicitly empty value is an error. SERVICE_OLLAMA_MODEL remains startup-only.
+- Missing or unreachable Ollama leaves health and admin available, ready false; chat returns 503 with a start/pull hint. Updates shows installed digests without registry comparison; Download stays available and always runs Ollama pull. CPU threads card saves/reports only; Ollama chooses threads.
+- Migration: start Ollama and pull hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M. Remove obsolete settings from operator configuration. The old cnv_sparkx26_model_models volume with HF weights is unused and can be deleted after backup; Compose now mounts only the existing data volume. Keep old volume and project folders to roll back to the preceding commit; no stored data is deleted automatically.
+
 - Docs: `docs/guide-cli.md`, a PowerShell-only way to test the service.
 
 ### Breaking: common service environment variables

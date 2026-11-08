@@ -1,7 +1,7 @@
 @echo off
-REM Starts the Spark service on port 29203 (syncs .venv with uv on each run). The first start downloads the weights (about 4 GB).
+REM Starts the CNV_SparkX26_Model service on port 29203 (syncs .venv with uv on each run).
 REM LABEL: Spark Service
-REM DESCRIPTION: Shared HTTP service that runs Spark-X2.6-1.7B on the CPU for every project.
+REM DESCRIPTION: HTTP service for Spark-X2.6-1.7B through Ollama. Start Ollama and pull model before local run.
 cd /d "%~dp0"
 if /i "%~1"=="run" goto run
 if /i "%~1"=="deploy" goto deploy
@@ -31,6 +31,7 @@ if errorlevel 1 (
 )
 call .venv\Scripts\activate.bat
 
+echo Local run requires running Ollama with configured model pulled.
 python src/app.py --dotenv
 pause
 exit /b 0

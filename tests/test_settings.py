@@ -66,6 +66,14 @@ def test_describe_lists_source_and_limits(tmp_path, monkeypatch):
 
 def test_other_saved_keys_survive(tmp_path):
     path = tmp_path / "s.json"
-    settings.save(path, torch_threads=7)
+    settings.save(path, legacy_key=7)
     Config(path, SCHEMA).set({"size": 1})
-    assert settings.load(path) == {"torch_threads": 7, "size": 1}
+    assert settings.load(path) == {"legacy_key": 7, "size": 1}
+
+
+def test_only_ollama_settings_remain(tmp_path):
+    from options import SETTINGS
+    config = Config(tmp_path / "s.json", SETTINGS)
+    assert {row["key"] for row in config.describe()} == {
+        "update_check_hours", "max_inflight", "cache_size", "thinking", "hide_reasoning", "warm"
+    }

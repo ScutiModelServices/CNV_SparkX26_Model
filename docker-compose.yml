@@ -1,5 +1,4 @@
-# Spark service: N API replicas behind one nginx address. Each replica runs the model in its own process,
-# so RAM use is per replica; the downloaded weights are shared through the models volume.
+# Spark service: N API replicas behind one nginx address, using one external Ollama model.
 # Start:  docker compose up -d --build          (callers use http://<host>:29203)
 # Scale:  SERVICE_REPLICAS=3 docker compose up -d --build, then: docker compose restart cnv_sparkx26_model_lb
 
@@ -15,13 +14,12 @@ services:
       SERVICE_ADMIN_PASSWORD: ${SERVICE_ADMIN_PASSWORD:-}
       SERVICE_NUM_THREAD: ${SERVICE_NUM_THREAD:-}
       SERVICE_REPLICAS: ${SERVICE_REPLICAS:-1}  # shown read-only on /admin/
-      SERVICE_OLLAMA_URL: ${SERVICE_OLLAMA_URL:-}  # set = answer through this Ollama (GGUF) instead of torch
+      SERVICE_OLLAMA_URL: ${SERVICE_OLLAMA_URL-http://host.docker.internal:11434}  # explicitly empty is an error
       SERVICE_OLLAMA_MODEL: ${SERVICE_OLLAMA_MODEL:-}
       SERVICE_THINKING: ${SERVICE_THINKING:-}  # off (default) or on, Ollama backend
       SERVICE_HIDE_REASONING: ${SERVICE_HIDE_REASONING:-}  # empty = on
     extra_hosts: ["host.docker.internal:host-gateway"]  # reaches an Ollama running on the host
     volumes:
-      - cnv_sparkx26_model_models:/models
       - cnv_sparkx26_model_data:/data
     deploy:
       replicas: ${SERVICE_REPLICAS:-1}
@@ -49,8 +47,6 @@ services:
         aliases: [cnv_sparkx26_model_lb]
 
 volumes:
-  cnv_sparkx26_model_models:
-    name: cnv_sparkx26_model_models
   cnv_sparkx26_model_data:
     name: cnv_sparkx26_model_data
 networks:

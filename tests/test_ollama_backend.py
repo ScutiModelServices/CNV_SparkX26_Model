@@ -21,6 +21,13 @@ class FakeOllama(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])) or b"{}")
         seen.append((self.path, body))
+        if body.get("model") == "missing":
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b'{"error":"missing /private/model/path"}')
+            return
+        if self.path == "/api/pull":
+            return self.send_json({"status": "success"})
         if self.path == "/api/generate":
             return self.send_json({"done": True})
         if body["stream"]:
@@ -83,7 +90,7 @@ def test_reasoning_written_into_the_answer_is_hidden_and_the_reply_comes_as_one_
 def test_settings_reach_the_loader_and_a_bad_thinking_value_is_refused(url, monkeypatch):
     monkeypatch.setenv("SERVICE_OLLAMA_URL", url)
     engine = engine_from_env("SERVICE_", SparkEngine, "m", thinking="on", hide_reasoning=False)
-    asyncio.run(engine.chat([{"role": "user", "content": "leak"}], project=None, temperature=0.0, max_tokens=9))
+    asyncio.run(engine.chat([{"role": "user", "content": "leak"}], temperature=0.0, max_tokens=9))
     assert seen[-1][1]["think"] is True
     with pytest.raises(ValueError):
         engine_from_env("SERVICE_", SparkEngine, "m", thinking="maybe")
@@ -94,13 +101,13 @@ def test_an_unreachable_server_is_an_engine_error():
         OllamaLoaded("http://127.0.0.1:1", "m", load_timeout=1)
 
 
-def test_engine_from_env_is_off_without_a_url_and_serves_through_ollama_with_one(url, monkeypatch):
+def test_engine_from_env_defaults_locally_and_serves_through_ollama(url, monkeypatch):
     monkeypatch.delenv("SERVICE_OLLAMA_URL", raising=False)
-    assert engine_from_env("SERVICE_", SparkEngine, "x") is None
+    assert engine_from_env("SERVICE_", SparkEngine, "x") is not None
     monkeypatch.setenv("SERVICE_OLLAMA_URL", url)
     monkeypatch.setenv("SERVICE_OLLAMA_MODEL", "m")
     engine = engine_from_env("SERVICE_", SparkEngine, "x")
-    reply = asyncio.run(engine.chat([{"role": "user", "content": "hi"}], project=None, temperature=0.0, max_tokens=9))
+    reply = asyncio.run(engine.chat([{"role": "user", "content": "hi"}], temperature=0.0, max_tokens=9))
     assert reply["content"] == "Hello" and reply["model"] == "m"
     assert asyncio.run(engine.cached_sha()) == "abc"
 
@@ -114,7 +121,132 @@ def test_a_saved_setting_applies_to_the_next_call_without_a_restart(url, monkeyp
             return values[key]
 
     engine = engine_from_env("SERVICE_", SparkEngine, "m", settings=Saved())
-    ask = lambda: asyncio.run(engine.chat([{"role": "user", "content": "leak"}], project=None, temperature=0.0, max_tokens=9))
+    ask = lambda: asyncio.run(engine.chat([{"role": "user", "content": "leak"}], temperature=0.0, max_tokens=9))
     assert ask()["content"] == "Hi" and seen[-1][1]["think"] is False
     values.update(thinking="on", hide_reasoning=False)
     assert ask()["content"] == "reason</think> Hi" and seen[-1][1]["think"] is True
+
+
+def test_empty_url_is_an_error(monkeypatch):
+    monkeypatch.setenv("SERVICE_OLLAMA_URL", "  ")
+    with pytest.raises(ValueError, match="SERVICE_OLLAMA_URL must not be empty"):
+        engine_from_env("SERVICE_", SparkEngine, "m")
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_missing_model_leaves_health_alive_and_chat_returns_503(url, monkeypatch, stream):
+    from app import create_app
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("SERVICE_OLLAMA_URL", url)
+    monkeypatch.setenv("SERVICE_OLLAMA_MODEL", "missing")
+    engine = engine_from_env("SERVICE_", SparkEngine, "m")
+    with TestClient(create_app(engine, warm=True)) as c:
+        assert c.get("/health").json()["ready"] is False
+        response = c.post("/v1/chat", json={"messages": [{"role": "user", "content": "hi"}], "stream": stream})
+        assert response.status_code == 503
+        assert "start Ollama and pull missing" in response.json()["detail"]
+        assert "private" not in response.text
+
+
+def test_reasoning_visibility_setting_invalidates_cached_answers(url, monkeypatch, tmp_path):
+    from app import create_app
+    from fastapi.testclient import TestClient
+    from options import SETTINGS
+    from settings import Config
+    from tokens import TokenStore
+    monkeypatch.setenv("SERVICE_OLLAMA_URL", url)
+    store = TokenStore(tmp_path / "t.json")
+    config = Config(store.settings_path, SETTINGS)
+    config.set({"update_check_hours": 0, "warm": False, "hide_reasoning": False})
+    engine = engine_from_env("SERVICE_", SparkEngine, "m", settings=config)
+    body = {"messages": [{"role": "user", "content": "leak"}]}
+    with TestClient(create_app(engine, tokens=store, config=config)) as c:
+        assert c.post("/v1/chat", json=body).json()["content"] == "reason</think> Hi"
+        assert c.post("/v1/chat", json=body).headers["X-Cache"] == "hit"
+        config.set({"hide_reasoning": True})
+        hidden = c.post("/v1/chat", json=body)
+        assert hidden.json()["content"] == "Hi"
+        assert hidden.headers["X-Cache"] == "miss"
+        config.set({"thinking": "on"})
+        assert c.post("/v1/chat", json=body).headers["X-Cache"] == "miss"
+        assert seen[-1][1]["think"] is True
+
+
+def test_unset_url_uses_local_default(monkeypatch):
+    import ollama_backend as backend
+    import io
+    monkeypatch.delenv("SERVICE_OLLAMA_URL", raising=False)
+    addresses = []
+    def call(url, *args):
+        addresses.append(url)
+        return io.BytesIO(b'{"done":true}')
+    monkeypatch.setattr(backend, "_call", call)
+    asyncio.run(engine_from_env("SERVICE_", SparkEngine, "m").warm())
+    assert addresses == ["http://127.0.0.1:11434"]
+
+
+def test_explicit_download_pulls_installed_model_then_invalidates(url, monkeypatch):
+    from app import create_app
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("SERVICE_OLLAMA_URL", url)
+    engine = engine_from_env("SERVICE_", SparkEngine, "m")
+    asyncio.run(engine.warm())
+    before = engine.generation
+    with TestClient(create_app(engine, admin_password="admin")) as c:
+        offered = c.post("/admin/updates/check", headers={"X-Internal-Token": "admin"}).json()
+        assert offered["weights"][0]["update"] is True
+        assert offered["weights"][0]["cached"] == "abc"
+        assert offered["weights"][0]["latest"] == "abc"
+        response = c.post("/admin/updates/weights", headers={"X-Internal-Token": "admin"})
+        assert response.status_code == 200
+        assert any(path == "/api/pull" for path, _ in seen)
+        assert engine.generation > before and not engine.ready
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("fault", ["timeout", "reset", "incomplete", "invalid", "shape", "eof"])
+def test_broken_upstream_reads_return_sanitized_503_and_clear_readiness(url, monkeypatch, stream, fault):
+    import http.client
+    import ollama_backend as backend
+    from app import create_app
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("SERVICE_OLLAMA_URL", url)
+    engine = engine_from_env("SERVICE_", SparkEngine, "m")
+    asyncio.run(engine.warm())
+    assert engine.ready
+
+    class BrokenResponse:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            self.close()
+        def close(self):
+            pass
+        def read(self, *args):
+            errors = {"timeout": TimeoutError("/private timeout"), "reset": ConnectionResetError("/private reset"),
+                      "incomplete": http.client.IncompleteRead(b"/private")}
+            if fault in errors:
+                raise errors[fault]
+            return b'not-json' if fault == "invalid" else b'{"message":{"content":null}}'
+        def __iter__(self):
+            if fault == "eof":
+                return iter([])
+            return iter([self.read()])
+
+    monkeypatch.setattr(backend, "_call", lambda *args: BrokenResponse())
+    with TestClient(create_app(engine)) as c:
+        reply = c.post("/v1/chat", json={"messages": [{"role": "user", "content": "hi"}], "stream": stream})
+        assert reply.status_code == 503
+        assert "start Ollama and pull m" in reply.json()["detail"]
+        assert "private" not in reply.text
+        assert c.get("/health").json()["ready"] is False
+
+
+def test_malformed_warmup_never_marks_backend_ready(monkeypatch):
+    import io
+    import ollama_backend as backend
+    monkeypatch.setattr(backend, "_call", lambda *args: io.BytesIO(b'{"error":"/private broken response"}'))
+    engine = engine_from_env("SERVICE_", SparkEngine, "m")
+    with pytest.raises(EngineError, match="start Ollama and pull m"):
+        asyncio.run(engine.warm())
+    assert not engine.ready

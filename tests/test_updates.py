@@ -56,3 +56,26 @@ def test_a_failed_download_keeps_the_loaded_model():
     with pytest.raises(OSError):
         asyncio.run(found.update_weights())
     assert engine.ready
+
+
+def test_explicit_ollama_pull_retries_after_failed_invalidation():
+    from ollama_backend import OllamaUpdates
+    events = []
+    engine = make_engine(cached_sha=lambda _: "same", remote_sha=lambda _: "same",
+                         download=lambda _: events.append("pull"))
+    asyncio.run(engine.warm())
+    original = engine.unload
+    async def unload():
+        events.append("unload")
+        if len(events) == 2:
+            raise OSError("marker not writable")
+        await original()
+    found = OllamaUpdates(engine.model, cached_sha=engine.cached_sha, remote_sha=engine.remote_sha,
+                          download=engine.pull, unload=unload)
+    with pytest.raises(OSError, match="marker not writable"):
+        asyncio.run(found.update_weights())
+    assert "marker not writable" in found.status()["error"] and engine.ready
+    status = asyncio.run(found.update_weights())
+    assert events == ["pull", "unload", "pull", "unload"]
+    assert status["error"] is None and status["weights"][0]["update"] is True
+    assert not engine.ready
