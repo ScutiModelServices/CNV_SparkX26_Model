@@ -116,9 +116,16 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
             if saved.get("num_thread") and saved["num_thread"] != client.num_thread:
                 client.num_thread = int(saved["num_thread"])
             await asyncio.to_thread(client.sync)
+            # A dropped model (download, threads change, sync) leaves /health "Starting" until a request loads it: reload once per drop.
+            if config.get("warm") and not client.ready and client.generation != warmed:
+                await warm_up()
             await asyncio.sleep(1)
 
+    warmed = 0  # generation of the last warm-up attempt
+
     async def warm_up() -> None:
+        nonlocal warmed
+        warmed = client.generation
         try:
             await client.warm()
         except Exception:
