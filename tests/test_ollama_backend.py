@@ -144,7 +144,7 @@ def test_missing_model_leaves_health_alive_and_chat_returns_503(url, monkeypatch
         assert c.get("/health").json()["ready"] is False
         response = c.post("/v1/chat", json={"messages": [{"role": "user", "content": "hi"}], "stream": stream})
         assert response.status_code == 503
-        assert "start Ollama and pull missing" in response.json()["detail"]
+        assert "press Download on the Updates card" in response.json()["detail"]
         assert "private" not in response.text
 
 
@@ -192,9 +192,10 @@ def test_explicit_download_pulls_installed_model_then_invalidates(url, monkeypat
     engine = engine_from_env("SERVICE_", SparkEngine, "m")
     asyncio.run(engine.warm())
     before = engine.generation
+    engine._remote_sha_of = lambda _: "abc"  # registry metadata fixture; never use real network
     with TestClient(create_app(engine, admin_password="admin")) as c:
         offered = c.post("/admin/updates/check", headers={"X-Internal-Token": "admin"}).json()
-        assert offered["weights"][0]["update"] is True
+        assert offered["weights"][0]["update"] is False
         assert offered["weights"][0]["cached"] == "abc"
         assert offered["weights"][0]["latest"] == "abc"
         response = c.post("/admin/updates/weights", headers={"X-Internal-Token": "admin"})
@@ -237,7 +238,7 @@ def test_broken_upstream_reads_return_sanitized_503_and_clear_readiness(url, mon
     with TestClient(create_app(engine)) as c:
         reply = c.post("/v1/chat", json={"messages": [{"role": "user", "content": "hi"}], "stream": stream})
         assert reply.status_code == 503
-        assert "start Ollama and pull m" in reply.json()["detail"]
+        assert "press Download on the Updates card" in reply.json()["detail"]
         assert "private" not in reply.text
         assert c.get("/health").json()["ready"] is False
 
@@ -247,7 +248,7 @@ def test_malformed_warmup_never_marks_backend_ready(monkeypatch):
     import ollama_backend as backend
     monkeypatch.setattr(backend, "_call", lambda *args: io.BytesIO(b'{"error":"/private broken response"}'))
     engine = engine_from_env("SERVICE_", SparkEngine, "m")
-    with pytest.raises(EngineError, match="start Ollama and pull m"):
+    with pytest.raises(EngineError, match="press Download on the Updates card"):
         asyncio.run(engine.warm())
     assert not engine.ready
 

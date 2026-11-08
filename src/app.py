@@ -90,7 +90,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
 
     updates = updates or OllamaUpdates(client.model, cached_sha=lambda: client.cached_sha(), remote_sha=lambda: client.remote_sha(),
                                  download=lambda: client.pull(), unload=lambda: client.unload(),
-                                 description="Shows the installed Ollama model digest without downloading; newer registry versions are not checked. Download is always available and pulls the model again.",
+                                 description="Checks the downloaded Ollama digest against the online registry manifest without downloading weights. Only Download pulls model files.",
                                  reload_note="Weights downloaded. Every replica drops the old copy within a few seconds and loads the new weights on its next request.")
 
     async def check_forever() -> None:

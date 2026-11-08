@@ -1,5 +1,7 @@
 # CNV_SparkX26_Model: Docker Desktop on this PC
 
+First start: open `/admin/` → **Updates** → **Download**; see [the web UI guide](guide-web-ui.md#updating-the-model-files). Startup and requests load downloaded files only; an empty installation keeps health/admin available and returns 503 for inference.
+
 Run API replicas behind nginx on port 29203, calling Ollama on the host.
 
 ## Requirements
@@ -28,7 +30,7 @@ Settings card: update_check_hours (6), max_inflight (0 = 4), cache_size (256, 0 
 ## Start
 
 ```bash
-ollama pull hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M
+curl -X POST http://127.0.0.1:29203/admin/updates/weights -H "X-Internal-Token: <ADMIN_PASSWORD>"
 ```
 
 ```bash

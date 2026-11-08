@@ -1,5 +1,7 @@
 # CNV_SparkX26_Model
 
+First start: open `/admin/` → **Updates** → **Download**; see [the web UI guide](docs/guide-web-ui.md#updating-the-model-files). Startup and requests load downloaded files only; an empty installation keeps health/admin available and returns 503 for inference.
+
 Spark-X2.6-1.7B chat over HTTP through Ollama, port 29203. API replicas share one Ollama model; they do not load weights themselves. No dedicated tool service is required.
 
 ## API
@@ -19,14 +21,14 @@ Spark-X2.6-1.7B chat over HTTP through Ollama, port 29203. API replicas share on
 
 ## Admin page
 
-`/admin/` provides tokens, usage, metrics, replicas, Settings and Updates. CPU threads are saved and reported only; Ollama chooses its own threads. Settings retain thinking, hide_reasoning, cache_size, max_inflight, update_check_hours and warm. Updates shows installed Ollama digests without checking newer registry versions; Download remains available and always runs an Ollama pull and invalidates every replica's cached answers. `GET /metrics` requires the admin password.
+`/admin/` provides tokens, usage, metrics, replicas, Settings and Updates. CPU threads are saved and reported only; Ollama chooses its own threads. The Updates card compares the downloaded Ollama manifest digest with the online registry manifest at startup, every `update_check_hours` and on **Check now**. Checks fetch metadata only; only **Download** runs `ollama pull`. A successful download invalidates every replica through shared storage; each replica reloads on its next request.
 
 ## Run
 
 Start Ollama and pull the configured model first:
 
 ```bash
-ollama pull hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M
+curl -X POST http://127.0.0.1:29203/admin/updates/weights -H "X-Internal-Token: <ADMIN_PASSWORD>"
 ```
 
 ```bash

@@ -11,10 +11,11 @@ This file is the one instruction file for every coding agent; `CLAUDE.md` only i
 - Run: `run.bat run`, or `uv run python src/app.py` (add `--dotenv` to load `.env`), or `docker compose up -d --build`
 
 ## Rules
+- Load downloaded weights only; no startup, warm-up or request downloads. Only the admin Updates Download callback downloads, then replica markers invalidate old weights. Missing files keep health/admin available and inference returns 503 with an admin Download hint.
 - Follow the `model-service-parity` skill and `AI/ModelServices/_docs/SHARED-FEATURES.md` (what must match in every model service) and `AI/ModelServices/_docs/SERVICE-SPECIFIC.md` (what differs on purpose). A change to a shared feature goes to every service; a new difference goes into `SERVICE-SPECIFIC.md` in the same change.
 - `web/index.html`, `src/tokens.py`, `src/settings.py`, `src/updates.py` and `.dockerignore` are copies shared with the other model services. Change one, copy it to the others, run `python tools/check_sync.py` in each repo.
 - Generation uses Ollama exclusively through `src/ollama_backend.py`; keep injected fake loaders in tests. Unset local URL defaults to localhost; explicitly empty URL is an error.
-- API starts while Ollama is unavailable: health reports not ready and chat returns sanitized 503 with a start/pull hint. Warm-up stays in the background.
+- API starts while Ollama is unavailable: health reports not ready and chat returns sanitized 503 with a admin Updates Download hint. Warm-up stays in the background.
 - Public chat fields are messages, temperature, max_tokens and stream; unknown fields return 422. CPU thread values are display-only; Ollama manages its own threads.
 - Update invalidation markers live alongside tokens in the shared data volume. Ollama stores its own weights.
 - Behaviour changes update `README.md`, `deployment.md`, `docs/guide-web-ui.md`, `.env.example` and `CHANGELOG.md` in the same commit.

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+from urllib.parse import quote
 from http.client import HTTPException
 import os
 import urllib.error
@@ -25,17 +27,17 @@ def _call(url: str, path: str, body: dict[str, Any] | None, timeout: float):
         if error.code == 400:
             raise EngineError("Ollama refused the request (400)", 400) from None
         model = (body or {}).get("model", "the configured model")
-        raise EngineError(f"Ollama is unavailable or the model is missing; start Ollama and pull {model}", 503) from None
+        raise EngineError("Model unavailable; start Ollama and ask an admin to press Download on the Updates card.", 503) from None
     except OSError:
         model = (body or {}).get("model", "the configured model")
-        raise EngineError(f"Ollama is unavailable or the model is missing; start Ollama and pull {model}", 503) from None
+        raise EngineError("Model unavailable; start Ollama and ask an admin to press Download on the Updates card.", 503) from None
 
 
 _READ_ERRORS = (OSError, HTTPException, ValueError, TypeError, KeyError, AttributeError)
 
 
 def _unavailable(model: str) -> EngineError:
-    return EngineError(f"Ollama is unavailable or the model is missing; start Ollama and pull {model}", 503)
+    return EngineError("Model unavailable; start Ollama and ask an admin to press Download on the Updates card.", 503)
 
 
 def _json_call(url: str, path: str, body: dict[str, Any] | None, timeout: float, model: str) -> dict[str, Any]:
@@ -122,15 +124,7 @@ class OllamaLoaded:
 
 
 class OllamaUpdates(Updates):
-    """Explicit Download always pulls; comparing local digests cannot establish remote freshness."""
-
-    async def _check(self) -> dict[str, Any]:
-        await super()._check()
-        # The shared page gates Download on this flag. Offer an explicit refresh,
-        # without claiming a newer registry manifest has been observed.
-        for row in self._status["weights"]:
-            row["update"] = True
-        return self.status()
+    """Explicit downloads pull; metadata checks compare registry manifests without fetching blobs."""
 
     async def update_weights(self) -> dict[str, Any]:
         async with self._lock:
@@ -181,9 +175,32 @@ def engine_from_env(prefix: str, engine_class: type, default_model: str, thinkin
     def local_digest(_: str) -> str | None:
         reply = _json_call(url, "/api/tags", None, 15, model)
         try:
-            return next((m["digest"] for m in reply["models"] if m["name"] in (model, f"{model}:latest")), None)
+            digest = next((m["digest"] for m in reply["models"] if m["name"] in (model, f"{model}:latest")), None)
+            return digest.removeprefix("sha256:").lower() if digest else None
         except _READ_ERRORS:
             raise _unavailable(model) from None
+
+    def remote_digest(_: str) -> str:
+        """Hash the registry manifest bytes, matching Ollama's installed digest."""
+        name = model
+        host = "registry.ollama.ai"
+        if name.startswith(("hf.co/", "huggingface.co/")):
+            host, name = name.split("/", 1)
+        name, separator, tag = name.partition(":")
+        if not separator:
+            tag = "latest"
+        if host == "registry.ollama.ai" and "/" not in name:
+            name = "library/" + name
+        request = urllib.request.Request(
+            f"https://{host}/v2/{quote(name, safe='/')}/manifests/{quote(tag, safe='')}",
+            headers={"Accept": "application/vnd.docker.distribution.manifest.v2+json"})
+        with urllib.request.urlopen(request, timeout=15) as response:
+            raw = response.read()
+        manifest = json.loads(raw)
+        if (not isinstance(manifest, dict) or manifest.get("schemaVersion") != 2
+                or not isinstance(manifest.get("config"), dict) or not isinstance(manifest.get("layers"), list)):
+            raise EngineError("Registry returned an invalid model manifest", 503)
+        return hashlib.sha256(raw).hexdigest()
 
     def pull(_: str) -> None:
         reply = _json_call(url, "/api/pull", {"model": model, "stream": False}, 3600, model)
@@ -191,4 +208,4 @@ def engine_from_env(prefix: str, engine_class: type, default_model: str, thinkin
             raise _unavailable(model)
 
     return engine_class(model, parallel=_parallel(), loader=lambda source: OllamaLoaded(url, source, thinking=mode == "on", hide_reasoning=hide, live=live),
-                        cached_sha=local_digest, remote_sha=lambda _: local_digest(_) or "", download=pull, **options)
+                        cached_sha=local_digest, remote_sha=remote_digest, download=pull, **options)

@@ -97,7 +97,13 @@ The **Settings** card changes options without editing `.env` or restarting: upda
 
 ## Updating the model files
 
-The Updates card shows installed Ollama digests without downloading. It does not check newer registry versions. Download stays available and always asks Ollama to pull the configured model again. Successful pulls invalidate answers across replicas through a marker in the shared data volume; the next call uses the updated model. Updating the API itself is covered by the deployment guide.
+The service loads only downloaded weights and tokenizer files. Startup, warm-up and requests never download. With no downloaded model, `/health` and `/admin/` answer, `ready` is false and inference returns 503 with an admin Download hint. First start: open `/admin/` → **Updates** → **Download**. The Updates card compares the downloaded Ollama manifest digest with the online registry manifest at startup, every `update_check_hours` and on **Check now**. Checks fetch metadata only; only **Download** runs `ollama pull`. A successful download invalidates every replica through shared storage; each replica reloads on its next request.
+
+Admin curl alternative:
+
+```bash
+curl -X POST http://127.0.0.1:29203/admin/updates/weights -H "X-Internal-Token: <ADMIN_PASSWORD>"
+```
 
 ## Connect to this service
 

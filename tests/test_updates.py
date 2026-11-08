@@ -77,5 +77,5 @@ def test_explicit_ollama_pull_retries_after_failed_invalidation():
     assert "marker not writable" in found.status()["error"] and engine.ready
     status = asyncio.run(found.update_weights())
     assert events == ["pull", "unload", "pull", "unload"]
-    assert status["error"] is None and status["weights"][0]["update"] is True
+    assert status["error"] is None and status["weights"][0]["update"] is False
     assert not engine.ready

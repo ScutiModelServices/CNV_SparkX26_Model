@@ -330,5 +330,5 @@ def test_unreachable_ollama_leaves_service_available_with_clear_503(monkeypatch,
         assert c.get("/admin/").status_code == 200
         reply = c.post("/v1/chat", json={**BODY, "stream": stream})
         assert reply.status_code == 503
-        assert "start Ollama and pull m" in reply.json()["detail"]
+        assert "press Download on the Updates card" in reply.json()["detail"]
         assert "127.0.0.1" not in reply.text and "private" not in reply.text

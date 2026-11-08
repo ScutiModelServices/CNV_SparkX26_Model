@@ -5,7 +5,7 @@ CNV_SparkX26_Model is one HTTP service (port 29203). It uses a separate Ollama a
 
 ## Ways to run it
 
-Each path has its own guide. Pick one.
+Each path has its own guide. Pick one. First start needs an explicit admin Updates Download; see the web UI guide below.
 
 | Path | Guide |
 |---|---|
