@@ -34,7 +34,7 @@ curl -X POST http://127.0.0.1:29203/admin/updates/weights -H "X-Internal-Token: 
 ```
 
 ```bash
-docker compose up -d --build
+docker compose --env-file .env.compose up -d --build
 ```
 
 Only cnv_sparkx26_model_data is mounted for API persistence. Ollama stores its own weights. Existing weight storage migration is described in [CHANGELOG](../CHANGELOG.md). Docker builds were not run for this migration.

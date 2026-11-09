@@ -32,7 +32,7 @@ curl -X POST http://127.0.0.1:29203/admin/updates/weights -H "X-Internal-Token: 
 ```
 
 ```bash
-docker compose up -d --build
+docker compose --env-file .env.compose up -d --build
 ```
 
 Compose defaults SERVICE_OLLAMA_URL to http://host.docker.internal:11434. A local run defaults to http://127.0.0.1:11434 when unset. An explicitly empty URL fails configuration. SERVICE_OLLAMA_MODEL selects the model at startup. Without Docker, use `run.bat run` or `uv run python src/app.py`. See [deployment](deployment.md).
