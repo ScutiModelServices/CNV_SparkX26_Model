@@ -4,7 +4,7 @@
 
 **Group:** Conversation
 
-**Tags:** `cpu`, `streaming`
+**Tags:** `cpu`, `streaming`, `host-threads`
 
 | | |
 |---|---|
