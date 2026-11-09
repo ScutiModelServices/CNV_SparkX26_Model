@@ -1,84 +1,59 @@
 # CNV_SparkX26_Model: Docker Desktop on this PC
 
-Run Spark-X2.6-1.7B on the CPU in Docker Desktop on the machine you work on, so other programs on it can call it.
+First start: open `/admin/` → **Updates** → **Download**; see [the web UI guide](guide-web-ui.md#updating-the-model-files). Startup and requests load downloaded files only; an empty installation keeps health/admin available and returns 503 for inference.
+
+Run API replicas behind nginx on port 29203, calling Ollama on the host.
 
 ## Requirements
 
-- Docker Desktop with Compose v2 (Windows: WSL2 backend).
-- About 5 GB of RAM **per replica** (each replica holds the model), plus the same again for every loaded
-  project model. Keep `SERVICE_REPLICAS=1` on a PC. Docker Desktop on Windows caps its engine at about half of your RAM unless you raise it in `.wslconfig`.
-- Network access on the first start to download the weights (about 4 GB) from Hugging Face.
-- CPU only. The Dockerfile installs the CPU build of torch and fails the build if a CUDA or ROCm build is found.
-
-## Steps
-
-1. Configure. In `CNV_SparkX26_Model/`:
-   ```bash
-   cp .env.example .env
-   ```
-   Set `SERVICE_ADMIN_PASSWORD` (empty = no auth and no admin page, fine for a local test). Leave `SERVICE_PORT=29203`. Leave `SERVICE_REPLICAS=1`.
-2. Start:
-   ```bash
-   docker compose up -d --build
-   ```
-   The first start downloads about 4 GB of weights into the `cnv_sparkx26_model_models` volume. `cnv_sparkx26_model_lb` starts only after the service is healthy
-   (up to 300 s grace). Watch with `docker compose ps` and `docker compose logs -f cnv_sparkx26_model`.
-3. Check:
-   ```bash
-   curl http://127.0.0.1:29203/health
-   ```
-   `ready` is `false` until the model has loaded, then `true`.
-4. Open the admin page: `http://127.0.0.1:29203/admin/` (see [guide-web-ui.md](guide-web-ui.md)) and make a token for each caller.
-5. Try a call:
-   ```bash
-   curl -X POST http://127.0.0.1:29203/v1/chat -H "Content-Type: application/json" -H "X-Internal-Token: spark_..." -d '{"messages":[{"role":"user","content":"Say hello in one sentence."}]}'
-   ```
-   Expect a JSON answer.
-6. Callers connect to the published port. The caller holds the URL and token:
-   - Caller on the host: `http://127.0.0.1:29203`.
-   - Caller in another Docker stack on the same host: `http://host.docker.internal:29203`.
+- Docker Desktop with Compose v2 and external citadel_core network.
+- Running Ollama reachable from Docker, listening on a host interface Docker can access.
+- Pull `hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M` into Ollama. Model memory belongs to Ollama, not each API replica; deployment memory has not been measured.
 
 ## Settings
 
-In `.env` next to `docker-compose.yml`:
+Copy `.env.example` to `.env` for Compose. Saved admin settings override their environment defaults.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `SERVICE_REPLICAS` | `1` | Number of `cnv_sparkx26_model` containers. Read by Compose. |
-| `SERVICE_MEM_LIMIT` | `0` (no cap) | RAM cap per container, for example `7g` (bfloat16 weights use about 5.3 GiB). An out-of-memory kill then stays in the container instead of starving the host. Read by Compose. |
-| `SERVICE_PORT` | `29203` | Host port `cnv_sparkx26_model_lb` publishes. |
-| `SERVICE_ADMIN_PASSWORD` | empty | Password for `/admin/`. When set, every call except `/health` must send a project token as `X-Internal-Token`. Empty = no auth. |
-| `SERVICE_NUM_THREAD` | torch decides | Starting value for the CPU threads card; a value saved on `/admin/` wins. Use the number of physical cores (`lscpu`: cores x sockets), not logical CPUs; more threads than cores slows every call. |
+| `SERVICE_ADMIN_PASSWORD` | empty | Unlock admin and require caller tokens. |
+| `SERVICE_PORT` | 29203 | Published nginx port. |
+| `SERVICE_REPLICAS` | 1 | API copies sharing Ollama. |
+| `SERVICE_MEM_LIMIT` | 0 | API container memory cap; excludes Ollama. |
+| `SERVICE_OLLAMA_URL` | http://host.docker.internal:11434 | Required Ollama address; explicitly empty is invalid. |
+| `SERVICE_OLLAMA_MODEL` | hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M | Model selected at API startup. |
+| `SERVICE_OLLAMA_PARALLEL` | 2 | Generations one replica runs at once; set it to the `OLLAMA_NUM_PARALLEL` of your Ollama. |
+| `SERVICE_NUM_THREAD` | unset | Saved/reported card value only; Ollama chooses threads. |
 
-On the **Settings** card of `/admin/` (saved in `settings.json` beside the tokens, shared by all replicas; a saved
-value beats the environment variable named in brackets): update check hours (`SERVICE_UPDATE_CHECK_HOURS`, 6),
-in-flight cap (`SERVICE_MAX_INFLIGHT`, 0 = 4), answers kept per replica (`SERVICE_CACHE_SIZE`, 256, 0 = off), project models loaded per replica (`SERVICE_MAX_PROJECT_MODELS`, 2),
-project models folder (`SERVICE_PROJECT_MODELS_DIR`, empty = off; in Docker use `/models/projects`), base model
-(`SERVICE_MODEL`, restart), number format (`SERVICE_DTYPE`, restart: `bfloat16` or `float32`; try `float32` if answers take many seconds on a CPU without native bfloat16 maths, it needs twice the RAM) and load at start (`SERVICE_WARM`, restart). Compose does not pass these; add the variable
-under `environment:` of `cnv_sparkx26_model` to use one as a starting value.
+Settings card: update_check_hours (6), max_inflight (0 = 4), cache_size (256, 0 = off), thinking (off/on), hide_reasoning (true), warm (true, restart). Their environment defaults are SERVICE_UPDATE_CHECK_HOURS, SERVICE_MAX_INFLIGHT, SERVICE_CACHE_SIZE, SERVICE_THINKING, SERVICE_HIDE_REASONING and SERVICE_WARM. See [admin guide](guide-web-ui.md#settings).
 
-## Daily use
+## Start
 
 ```bash
-docker compose ps          # state
-docker compose logs -f cnv_sparkx26_model
-docker compose down        # stop (the weights volume is kept)
-docker compose up -d --build && docker compose restart cnv_sparkx26_model_lb   # after a code change
+curl -X POST http://127.0.0.1:29203/admin/updates/weights -H "X-Internal-Token: <ADMIN_PASSWORD>"
 ```
+
+```bash
+docker compose up -d --build
+```
+
+Only cnv_sparkx26_model_data is mounted for API persistence. Ollama stores its own weights. Existing weight storage migration is described in [CHANGELOG](../CHANGELOG.md). Docker builds were not run for this migration.
+
+## Check
+
+```bash
+curl http://127.0.0.1:29203/health
+```
+
+Ready becomes true after successful warm-up or generation. Open http://127.0.0.1:29203/admin/ and create a caller token. Other containers on citadel_core use http://cnv_sparkx26_model_lb:29203.
 
 ## Problems
 
 | Symptom | Fix |
 |---|---|
-| `address already in use` on 29203 | Another copy (`run.bat`, or the same stack on another compose project) is running. Stop it or change `SERVICE_PORT`. |
-| `/health` shows `ready: false` for minutes | First start: the weights are downloading or loading. Check `docker compose logs -f cnv_sparkx26_model`. |
-| 401 Invalid token | The caller's token is missing or revoked; make one on `/admin/`. |
-| Container restarts in a loop | Out of RAM. Raise the Docker Desktop memory limit or lower the replica count. |
-| `cnv_sparkx26_model_lb` never starts | No replica is healthy yet (first download, or out of memory). `docker compose logs cnv_sparkx26_model`. |
-| Replicas restart in a loop | Out of RAM. Lower `SERVICE_REPLICAS`. |
-| 422 on `tools`, `schema` or `thinking` | Not supported by this service. |
-| 429 | Over the token's rate limit, or too many calls waiting for the model. |
-| Slow answers | CPU speed with `transformers` is modest for any model of this size; use a 4-bit GGUF runtime if speed matters. Raise CPU threads on `/admin/`. |
-| nginx 502 after scaling | `cnv_sparkx26_model_lb` not restarted after the replica count changed. |
-
-The load balancer also joins external `citadel_core` as `cnv_sparkx26_model_lb`. Start the Citadel stack first so that network exists; tool services on it use `http://cnv_sparkx26_model_lb:29203`. Docker project and API image are `cnv_sparkx26_model` and `cnv_sparkx26_model:latest`; persistent volumes have explicit `cnv_sparkx26_model_*` names. Volume migration and rollback instructions are in [CHANGELOG.md](../CHANGELOG.md).
+| Ready false or chat 503 | Start Ollama, pull the configured model, and verify its address from the API container. Health and admin still answer. |
+| 401 | Send a valid caller token; admin routes need the admin password. |
+| 422 | Remove unknown fields or correct validation errors. |
+| 429 | Wait Retry-After; token rate or in-flight limit reached. |
+| Port 29203 busy | Stop the other listener or configure SERVICE_PORT. |
+| nginx 502 after scaling | Restart cnv_sparkx26_model_lb. |

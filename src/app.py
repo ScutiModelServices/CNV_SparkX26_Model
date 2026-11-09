@@ -1,8 +1,4 @@
-"""HTTP face of Spark-X2.6-1.7B, run in this process on the CPU.
-
-POST /v1/chat {"messages", "project", "temperature", "max_tokens"} runs one model turn and returns the reply.
-Tools, JSON schemas and thinking are not supported (the request is refused with 422). GET /health reports whether
-the model is loaded."""
+"""HTTP API for Spark-X2.6-1.7B through Ollama. Unknown request fields return 422."""
 
 from __future__ import annotations
 
@@ -15,7 +11,7 @@ import os
 from pathlib import Path
 import time
 from contextlib import asynccontextmanager
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse, StreamingResponse
@@ -25,16 +21,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cache import AnswerCache
 from engine import DEFAULT_MODEL, SparkEngine, EngineError, default_marker
-from ollama_backend import engine_from_env
+from ollama_backend import OllamaUpdates, engine_from_env
 from options import SETTINGS
 import settings
 from tokens import LatencyHistogram, TokenStore
 from updates import Updates
 
 _log = logging.getLogger(__name__)
-
-PROJECT_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,47}$"
-
 
 class Message(BaseModel):
     role: Literal["system", "user", "assistant"]
@@ -45,7 +38,6 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")  # tools, schema and thinking are refused, not silently ignored
 
     messages: list[Message] = Field(min_length=1, max_length=64)
-    project: str | None = Field(None, pattern=PROJECT_PATTERN)
     temperature: float = Field(0.0, ge=0, le=2)
     max_tokens: int = Field(512, ge=1, le=4096)
     stream: bool = False  # true: the answer arrives as JSON lines while it is made
@@ -57,13 +49,13 @@ class SettingsUpdate(BaseModel):
 
 class NewToken(BaseModel):
     name: str = Field(min_length=1, max_length=64)
-    projects: list[Annotated[str, Field(pattern=PROJECT_PATTERN)]] | None = Field(None, max_length=32)
+    projects: None = None  # null keeps the shared editor compatible; restrictions were removed
     rate: int | None = Field(None, ge=1, le=100_000)  # calls per minute
     expires_days: int | None = Field(None, ge=1, le=3650)
 
 
 class TokenScope(BaseModel):
-    projects: list[Annotated[str, Field(pattern=PROJECT_PATTERN)]] | None = Field(None, max_length=32)
+    projects: None = None  # null keeps the shared editor compatible; restrictions were removed
     rate: int | None = Field(None, ge=1, le=100_000)
 
 
@@ -81,10 +73,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
     many answers per replica (SERVICE_CACHE_SIZE). `config` (the admin page's settings) replaces `warm`, `check_hours`,
     `max_inflight` and `cache_size` and keeps them live; without it they stay fixed."""
     tokens = tokens or TokenStore(os.environ.get("SERVICE_TOKENS_FILE", "tokens.json"))
-    client = client or engine_from_env("SERVICE_", SparkEngine, DEFAULT_MODEL, marker=default_marker(),
-                                       settings=config) or SparkEngine(
-        config.get("model") if config else os.environ.get("SERVICE_MODEL", DEFAULT_MODEL),
-        dtype=config.get("dtype") if config else "bfloat16", marker=default_marker())
+    client = client or engine_from_env("SERVICE_", SparkEngine, DEFAULT_MODEL, marker=default_marker(), settings=config)
     inflight = 0
     cache = AnswerCache()
 
@@ -97,11 +86,11 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
         """Calls this replica lets wait for the model at once; more get 429. 0 = 4."""
         value = config.get("max_inflight") if config else (
             max_inflight if max_inflight is not None else int(os.environ.get("SERVICE_MAX_INFLIGHT") or 0))
-        return value or 4
+        return value or 4 * client.parallel
 
-    updates = updates or Updates(client.model, cached_sha=lambda: client.cached_sha(), remote_sha=lambda: client.remote_sha(),
+    updates = updates or OllamaUpdates(client.model, cached_sha=lambda: client.cached_sha(), remote_sha=lambda: client.remote_sha(),
                                  download=lambda: client.pull(), unload=lambda: client.unload(),
-                                 description="Looks for newer model weights on the Hugging Face Hub without downloading.",
+                                 description="Checks the downloaded Ollama digest against the online registry manifest without downloading weights. Only Download pulls model files.",
                                  reload_note="Weights downloaded. Every replica drops the old copy within a few seconds and loads the new weights on its next request.")
 
     async def check_forever() -> None:
@@ -121,17 +110,22 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
             await asyncio.sleep(min(wait, 1.0) if wait > 0 else 1.0)
 
     async def sync_forever() -> None:
-        """Applies what another replica saved (CPU threads, project models) and drops models it replaced with new weights."""
+        """Applies saved thread display values and invalidates answers after another replica pulls the model."""
         while True:
             saved = settings.load(tokens.settings_path)
             if saved.get("num_thread") and saved["num_thread"] != client.num_thread:
                 client.num_thread = int(saved["num_thread"])
-            client.projects_dir = config.get("project_models_dir")
-            client.max_projects = config.get("max_project_models")
-            client.sync()
+            await asyncio.to_thread(client.sync)
+            # A dropped model (download, threads change, sync) leaves /health "Starting" until a request loads it: reload once per drop.
+            if config.get("warm") and not client.ready and client.generation != warmed:
+                await warm_up()
             await asyncio.sleep(1)
 
+    warmed = 0  # generation of the last warm-up attempt
+
     async def warm_up() -> None:
+        nonlocal warmed
+        warmed = client.generation
         try:
             await client.warm()
         except Exception:
@@ -142,7 +136,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
         background: list[asyncio.Task] = []
         try:
             if config.get("warm") if config else warm:
-                # In the background: the first start downloads the weights, and /health must answer meanwhile.
+                # Warm Ollama in the background so health and admin answer during initialization.
                 background.append(asyncio.create_task(warm_up()))
             if config or check_hours > 0:
                 background.append(asyncio.create_task(check_forever()))
@@ -158,10 +152,10 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
                     pass
             await client.close()
 
-    def authorize(request: Request, x_internal_token: str = Header("")) -> list[str] | None:
-        """The projects the token is limited to, or None for all. Unset admin password = no auth."""
+    def authorize(request: Request, x_internal_token: str = Header("")) -> None:
+        """Authenticate and enforce token rate limits; there is no model scope selector."""
         if not admin_password:
-            return None
+            return
         row = tokens.lookup(x_internal_token)
         if row is None:
             raise HTTPException(401, "Invalid token")
@@ -169,11 +163,6 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
         if wait:
             raise HTTPException(429, "Too many requests for this token", headers={"Retry-After": str(wait)})
         request.state.token_id = row["id"]
-        return row.get("projects")
-
-    def check_scope(allowed: list[str] | None, project: str | None) -> None:
-        if project is not None and allowed is not None and project not in allowed:
-            raise HTTPException(403, f"This token may not use project {project!r}")
 
     def admin(x_internal_token: str = Header("")) -> None:
         if not admin_password or not hmac.compare_digest(x_internal_token, admin_password):
@@ -195,7 +184,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
     @app.get("/health")
     async def health() -> dict[str, Any]:
         return {"status": "ok", "model": client.model, "ready": client.ready,
-                "num_thread": client.num_thread, "project_models": client.projects()}
+                "num_thread": client.num_thread}
 
     def build(reply: dict[str, Any], started: float) -> dict[str, Any]:
         return {"content": reply["content"], "finish_reason": reply["finish"], "model": reply["model"],
@@ -204,9 +193,9 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
                 "duration_ms": round((time.perf_counter() - started) * 1000)}
 
     def cache_key(body: ChatRequest) -> str:
-        """Everything that shapes the answer. Project files are not watched (see engine.py), so the key has no digest."""
-        part = [client.generation, body.project if body.project and client.has_project(body.project) else None,
-                [m.model_dump() for m in body.messages], body.max_tokens]
+        """Generation identifies answers made before a model refresh."""
+        part = [client.generation, [m.model_dump() for m in body.messages], body.max_tokens,
+                config.get("thinking") if config else None, config.get("hide_reasoning") if config else None]
         return hashlib.sha256(json.dumps(part, sort_keys=True, default=str).encode()).hexdigest()
 
     def line(event: dict[str, Any]) -> str:
@@ -240,7 +229,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
                 else:
                     stats = value
         except EngineError as error:
-            yield line({"type": "error", "status": 422 if error.status == 400 else 500, "message": str(error)})
+            yield line({"type": "error", "status": 422 if error.status == 400 else (error.status or 500), "message": str(error)})
             return
         except Exception:
             _log.exception("Spark chat failed")
@@ -254,9 +243,8 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
         yield line({"type": "done", **result})
 
     @app.post("/v1/chat")
-    async def chat(body: ChatRequest, response: Response, allowed: list[str] | None = Depends(authorize),
+    async def chat(body: ChatRequest, response: Response, _auth: None = Depends(authorize),
                    _slot: None = Depends(slot)) -> Any:
-        check_scope(allowed, body.project)
         started = time.perf_counter()
         size = cache_limit() if body.temperature == 0 else 0  # a higher temperature asks for a different answer each time
         key = cache_key(body) if size else None
@@ -270,16 +258,16 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
         messages = [m.model_dump() for m in body.messages]
         try:
             if body.stream:
-                events = client.chat_stream(messages, project=body.project, temperature=body.temperature, max_tokens=body.max_tokens)
+                events = client.chat_stream(messages, temperature=body.temperature, max_tokens=body.max_tokens)
                 try:
                     first = await anext(events, None)  # the first piece is waited for here, so a refusal is still an HTTP error
                 except BaseException:
                     await events.aclose()
                     raise
                 return ndjson(live_lines(events, first, started, key, size), "miss")
-            reply = await client.chat(messages, project=body.project, temperature=body.temperature, max_tokens=body.max_tokens)
+            reply = await client.chat(messages, temperature=body.temperature, max_tokens=body.max_tokens)
         except EngineError as error:
-            raise HTTPException(422 if error.status == 400 else 500, str(error)) from None
+            raise HTTPException(422 if error.status == 400 else (error.status or 500), str(error)) from None
         except Exception:
             _log.exception("Spark chat failed")
             raise HTTPException(500, "Spark could not answer") from None
@@ -291,7 +279,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
 
     @app.put("/admin/threads", dependencies=[Depends(admin)])
     def set_threads(body: Threads) -> dict[str, Any]:
-        """Applies to this replica now and is saved; the other replicas apply it within a few seconds. It beats SERVICE_NUM_THREAD."""
+        """Saves the shared card value; Ollama chooses its own threads and ignores this value."""
         client.num_thread = body.num_thread
         settings.save(tokens.settings_path, num_thread=body.num_thread)
         return {"num_thread": client.num_thread}
@@ -303,7 +291,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
             value = os.environ.get(name, "").strip()
             return int(value) if value.isdigit() else None
 
-        return {"replicas": number("SERVICE_REPLICAS"), "parallel": 1}
+        return {"replicas": number("SERVICE_REPLICAS"), "ollama_parallel": client.parallel}
 
     @app.get("/admin/updates", dependencies=[Depends(admin)])
     async def update_status() -> dict[str, Any]:
@@ -324,11 +312,11 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
 
     @app.get("/admin/tokens", dependencies=[Depends(admin)])
     def list_tokens() -> dict[str, Any]:
-        return {"tokens": tokens.list()}
+        return {"tokens": [{**row, "projects": None} for row in tokens.list()]}
 
     @app.post("/admin/tokens", dependencies=[Depends(admin)])
     def create_token(body: NewToken) -> dict[str, Any]:
-        return tokens.create(body.name.strip(), body.projects, body.rate, body.expires_days)
+        return tokens.create(body.name.strip(), None, body.rate, body.expires_days)
 
     @app.get("/admin/settings", dependencies=[Depends(admin)])
     def get_settings() -> dict[str, Any]:
@@ -348,7 +336,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
 
     @app.put("/admin/tokens/{token_id}", dependencies=[Depends(admin)])
     def update_token(token_id: str, body: TokenScope) -> dict[str, bool]:
-        if not tokens.update(token_id, body.projects, body.rate):
+        if not tokens.update(token_id, None, body.rate):
             raise HTTPException(404, "No such token")
         return {"ok": True}
 
@@ -395,15 +383,10 @@ def main() -> None:
             print(f".env: loaded {', '.join(names) or 'no variables'} (names only; a real environment variable wins)", flush=True)
         else:
             print(".env: no file in the service folder", flush=True)
-    settings.apply_models_dir()  # SERVICE_MODELS_DIR -> HF_HOME / OLLAMA_MODELS
 
     store = TokenStore(os.environ.get("SERVICE_TOKENS_FILE", "tokens.json"))
     config = settings.Config(store.settings_path, SETTINGS)
-    client = engine_from_env("SERVICE_", SparkEngine, DEFAULT_MODEL, projects_dir=config.get("project_models_dir"),
-                             max_projects=config.get("max_project_models"), marker=default_marker(),
-                             settings=config) or SparkEngine(
-        config.get("model"), projects_dir=config.get("project_models_dir"),
-        max_projects=config.get("max_project_models"), dtype=config.get("dtype"), marker=default_marker())
+    client = engine_from_env("SERVICE_", SparkEngine, DEFAULT_MODEL, marker=default_marker(), settings=config)
     saved = settings.load(store.settings_path)
     threads = saved.get("num_thread") or os.environ.get("SERVICE_NUM_THREAD", "").strip()
     if threads:

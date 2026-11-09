@@ -1,5 +1,7 @@
 # Test it from the command line
 
+First start: open `/admin/` → **Updates** → **Download**; see [the web UI guide](guide-web-ui.md#updating-the-model-files). Startup and requests load downloaded files only; an empty installation keeps health/admin available and returns 503 for inference.
+
 Calls SparkX 2.6 with PowerShell only, no admin page. Port 29203. Replace `<...>` values. The commands were written from the code and not yet run against a live server.
 
 ## Get a token
@@ -26,14 +28,14 @@ Invoke-RestMethod -Method Post -Uri "$base/v1/chat" -Headers $h -ContentType "ap
 
 Add `stream = $true` to get JSON lines while the answer is made.
 
-Tools, schema and thinking get 422.
+Unknown fields, including project, tools, schema and request thinking, get 422. Start Ollama and pull the configured model before calling.
 
 ## Problems
 
 | Answer | Cause |
 |---|---|
 | `401` | Wrong value: admin routes need the admin password, `/v1/*` needs a token. |
-| `403` | The token's *projects* list does not include what you asked for. |
+| `503` | Start Ollama and pull the configured model. |
 | `429` | Token rate used up or too many calls waiting; wait `Retry-After` seconds. |
 | `422` | A field is unknown or out of range; the answer says which. |
 | connection refused | Not running, or another port; see the run-path guides. |

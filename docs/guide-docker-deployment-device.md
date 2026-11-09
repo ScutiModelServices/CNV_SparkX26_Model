@@ -1,12 +1,14 @@
 # CNV_SparkX26_Model: Docker on a deployment machine
 
-Run Spark-X2.6-1.7B on the CPU on a separate always-on machine (default `lex@scutiserver1.local`, folder
-`/media/ZimaOS-HD/Apps/CNV_SparkX26_Model`). Callers reach it over the published port.
+First start: open `/admin/` → **Updates** → **Download**; see [the web UI guide](guide-web-ui.md#updating-the-model-files). Startup and requests load downloaded files only; an empty installation keeps health/admin available and returns 503 for inference.
+
+Serve Spark-X2.6-1.7B through Ollama on a separate always-on machine (default `lex@scutiserver1.local`, folder
+`/media/ZimaOS-HD/Apps/ModelServices/CNV_SparkX26_Model`). Callers reach it over the published port.
 
 ## Requirements on the machine
 
 - Docker + Compose v2, and ssh access (root over ssh is refused; use the normal user).
-- Enough RAM for the model times `SERVICE_REPLICAS`.
+- Running Ollama with the configured model pulled. API replicas share its model memory.
 
 ## 1. Publish the code (from your PC)
 
@@ -27,13 +29,13 @@ Keep your own target in the git-ignored `tools\deploy.local.ini` (copy `tools\de
 ## 2. First-time setup on the machine
 
 ```bash
-mkdir -p /media/ZimaOS-HD/Apps
-git clone -b live <your-repo-url> /media/ZimaOS-HD/Apps/CNV_SparkX26_Model
-cd /media/ZimaOS-HD/Apps/CNV_SparkX26_Model
+mkdir -p /media/ZimaOS-HD/Apps/ModelServices
+git clone -b live <your-repo-url> /media/ZimaOS-HD/Apps/ModelServices/CNV_SparkX26_Model
+cd /media/ZimaOS-HD/Apps/ModelServices/CNV_SparkX26_Model
 ```
 Create `.env` (deploy option 2 copies yours, or `cp .env.example .env` and edit):
 - `SERVICE_ADMIN_PASSWORD`: a real password.
-- `SERVICE_REPLICAS=1` unless you have the memory for more.
+- `SERVICE_REPLICAS=1` unless you need more API copies.
 - `SERVICE_PORT=29203` (published on all interfaces; firewall it if the LAN should not reach it, or bind it to
   `127.0.0.1` in the `ports:` line of `cnv_sparkx26_model_lb` when only callers on the machine need it).
 
@@ -44,8 +46,7 @@ docker compose up -d --build
 docker compose ps
 curl http://127.0.0.1:29203/health
 ```
-The first start downloads about 4 GB of weights into the `cnv_sparkx26_model_models` volume; `cnv_sparkx26_model_lb` waits for a healthy service
-(up to 300 s grace).
+API health and admin start independently of Ollama readiness. Start Ollama and pull the configured model before chat. See [settings](guide-docker-same-device.md#settings) for addresses and model selection.
 
 ## 4. Connect callers
 
@@ -71,7 +72,7 @@ The restart is needed because nginx resolves replica addresses once at start.
 ## Updating
 
 ```bash
-cd /media/ZimaOS-HD/Apps/CNV_SparkX26_Model
+cd /media/ZimaOS-HD/Apps/ModelServices/CNV_SparkX26_Model
 git pull
 docker compose up -d --build
 docker compose restart cnv_sparkx26_model_lb

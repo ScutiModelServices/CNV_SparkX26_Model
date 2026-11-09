@@ -1,26 +1,20 @@
-"""Answers through an Ollama server instead of running `transformers` in this process.
-
-Set `SERVICE_OLLAMA_URL` (for example `SERVICE_OLLAMA_URL=http://host.docker.internal:11434`) and the model name in
-`SERVICE_OLLAMA_MODEL`. The engine class keeps its queue, answer cache and admin features; only the model behind it
-changes. Why: a quantised GGUF in llama.cpp is about 15 times faster than torch bf16 on a CPU without AVX2.
-Thinking is a setting (`SERVICE_THINKING`, `off` or `on`). `off` sends `think: false`; `on` lets the model think first
-(Ollama keeps that part out of the answer; slower, and a model without thinking support is refused with 400).
-Small models can still write their reasoning into the answer and close it with `</think>`; with `SERVICE_HIDE_REASONING`
-on (default) everything up to the last `</think>` is dropped. A streamed reply is then sent as one piece when it is
-complete, because the reasoning cannot be told apart before the tag appears.
-
-shortcut: project models and CPU threads are not forwarded to Ollama (it chooses its own threads); the update check
-compares local digests only, press Download to pull the model again."""
+"""Ollama chat adapter; blocking network calls run in engine worker threads."""
 
 from __future__ import annotations
 
 import json
+import hashlib
+from urllib.parse import quote
+from http.client import HTTPException
 import os
 import urllib.error
 import urllib.request
 from typing import Any, Callable, Iterator
 
 from engine import EngineError
+from updates import Updates
+
+DEFAULT_URL = "http://127.0.0.1:11434"
 
 
 def _call(url: str, path: str, body: dict[str, Any] | None, timeout: float):
@@ -29,20 +23,43 @@ def _call(url: str, path: str, body: dict[str, Any] | None, timeout: float):
     try:
         return urllib.request.urlopen(request, timeout=timeout)
     except urllib.error.HTTPError as error:
-        detail = error.read(2000).decode("utf-8", "replace")
-        raise EngineError(f"Ollama answered {error.code}: {detail}", 400 if error.code == 400 else None) from None
-    except OSError as error:
-        raise EngineError(f"Ollama at {url} is unreachable: {error}") from None
+        error.close()
+        if error.code == 400:
+            raise EngineError("Ollama refused the request (400)", 400) from None
+        model = (body or {}).get("model", "the configured model")
+        raise EngineError("Model unavailable; start Ollama and ask an admin to press Download on the Updates card.", 503) from None
+    except OSError:
+        model = (body or {}).get("model", "the configured model")
+        raise EngineError("Model unavailable; start Ollama and ask an admin to press Download on the Updates card.", 503) from None
+
+
+_READ_ERRORS = (OSError, HTTPException, ValueError, TypeError, KeyError, AttributeError)
+
+
+def _unavailable(model: str) -> EngineError:
+    return EngineError("Model unavailable; start Ollama and ask an admin to press Download on the Updates card.", 503)
+
+
+def _json_call(url: str, path: str, body: dict[str, Any] | None, timeout: float, model: str) -> dict[str, Any]:
+    """Read and validate a backend object without exposing response bodies or transport details."""
+    try:
+        with _call(url, path, body, timeout) as response:
+            reply = json.load(response)
+        if not isinstance(reply, dict) or reply.get("error"):
+            raise _unavailable(model)
+        return reply
+    except _READ_ERRORS:
+        raise _unavailable(model) from None
 
 
 class OllamaLoaded:
-    """Same two methods as `engine.Loaded`, answered by Ollama's /api/chat."""
+    """Answer generations through Ollama's /api/chat."""
 
     def __init__(self, url: str, model: str, load_timeout: float = 300.0, thinking: bool = False,
                  hide_reasoning: bool = True, live: Callable[[], tuple[bool, bool]] | None = None) -> None:
-        """`live` returns (thinking, hide_reasoning) at every call, so a saved setting applies without a restart."""
+        """Read live thinking/visibility settings for each generation."""
         self.url, self.model, self._fixed, self._live = url.rstrip("/"), model, (thinking, hide_reasoning), live
-        _call(self.url, "/api/generate", {"model": model, "prompt": ""}, load_timeout).close()  # loads the model into RAM
+        _json_call(self.url, "/api/generate", {"model": model, "prompt": "", "stream": False}, load_timeout, model)
 
     @property
     def thinking(self) -> bool:
@@ -57,7 +74,7 @@ class OllamaLoaded:
                 "options": {"temperature": temperature, "num_predict": max_tokens}}
 
     def _clean(self, text: str, hide: bool | None = None) -> str:
-        """The answer without reasoning that was written into it: what follows the last `</think>`."""
+        """Drop reasoning written into content through its final closing marker."""
         return text.rsplit("</think>", 1)[-1].strip() if (self.hide_reasoning if hide is None else hide) and "</think>" in text else text
 
     @staticmethod
@@ -67,33 +84,59 @@ class OllamaLoaded:
 
     def stream(self, messages: list[dict[str, str]], temperature: float, max_tokens: int, max_time: float,
                stop: Any) -> Iterator[tuple[str, Any]]:
-        response = _call(self.url, "/api/chat", self._body(messages, temperature, max_tokens, True), max_time)
-        hide = self.hide_reasoning  # fixed for this reply
-        held: list[str] = []  # with hide_reasoning the reply is kept until it is complete
+        hide = self.hide_reasoning
+        held: list[str] = []
         try:
-            for raw in response:  # one JSON object per line
-                if stop.is_set():
-                    return
-                piece = json.loads(raw)
-                if piece.get("error"):
-                    raise EngineError(str(piece["error"]))
-                if text := piece.get("message", {}).get("content"):
-                    if hide:
-                        held.append(text)
-                    else:
-                        yield "content", text
-                if piece.get("done"):
-                    if held and (answer := self._clean("".join(held), hide)):
-                        yield "content", answer
-                    yield "done", self._stats(piece)
-                    return
-        finally:
-            response.close()
+            with _call(self.url, "/api/chat", self._body(messages, temperature, max_tokens, True), max_time) as response:
+                for raw in response:
+                    if stop.is_set():
+                        return
+                    piece = json.loads(raw)
+                    if not isinstance(piece, dict) or piece.get("error"):
+                        raise _unavailable(self.model)
+                    message = piece.get("message", {})
+                    if not isinstance(message, dict) or not isinstance(message.get("content", ""), str):
+                        raise _unavailable(self.model)
+                    if text := message.get("content"):
+                        if hide:
+                            held.append(text)
+                        else:
+                            yield "content", text
+                    if piece.get("done") is True:
+                        if held and (answer := self._clean("".join(held), hide)):
+                            yield "content", answer
+                        yield "done", self._stats(piece)
+                        return
+                if not stop.is_set():
+                    raise _unavailable(self.model)
+        except _READ_ERRORS:
+            raise _unavailable(self.model) from None
 
     def generate(self, messages: list[dict[str, str]], temperature: float, max_tokens: int, max_time: float) -> dict[str, Any]:
-        with _call(self.url, "/api/chat", self._body(messages, temperature, max_tokens, False), max_time) as response:
-            reply = json.load(response)
-        return {"content": self._clean(reply["message"]["content"].strip()), **self._stats(reply)}
+        reply = _json_call(self.url, "/api/chat", self._body(messages, temperature, max_tokens, False), max_time, self.model)
+        try:
+            content = reply["message"]["content"]
+            if not isinstance(content, str):
+                raise _unavailable(self.model)
+            return {"content": self._clean(content.strip()), **self._stats(reply)}
+        except _READ_ERRORS:
+            raise _unavailable(self.model) from None
+
+
+class OllamaUpdates(Updates):
+    """Explicit downloads pull; metadata checks compare registry manifests without fetching blobs."""
+
+    async def update_weights(self) -> dict[str, Any]:
+        async with self._lock:
+            try:
+                self._unload_pending = True
+                await self._download()
+                await self._unload()
+                self._unload_pending = False
+                return await self._check()
+            except Exception as error:
+                self._status = {**self._status, "error": f"{type(error).__name__}: {error}"}
+                raise
 
 
 def _flag(value: Any, name: str, default: bool) -> bool:
@@ -104,15 +147,20 @@ def _flag(value: Any, name: str, default: bool) -> bool:
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
+
+def _parallel() -> int:
+    """Generations one replica runs at once: SERVICE_OLLAMA_PARALLEL (default 2), the OLLAMA_NUM_PARALLEL of your Ollama."""
+    raw = os.environ.get("SERVICE_OLLAMA_PARALLEL", "").strip() or "2"
+    if not raw.isdigit() or int(raw) < 1:
+        raise ValueError("SERVICE_OLLAMA_PARALLEL must be a whole number of 1 or more")
+    return int(raw)
+
 def engine_from_env(prefix: str, engine_class: type, default_model: str, thinking: str | None = None,
-                    hide_reasoning: bool | None = None, settings: Any = None, **options: Any) -> Any | None:
-    """An engine backed by Ollama when `<prefix>OLLAMA_URL` is set, else None (the caller builds the torch engine).
-    `thinking` (`off` or `on`) and `hide_reasoning` come from the arguments, else `<prefix>THINKING` and
-    `<prefix>HIDE_REASONING`. `settings` (a `settings.Config` with keys `thinking` and `hide_reasoning`) is read at every
-    call and wins, so the admin page changes them live."""
-    url = os.environ.get(f"{prefix}OLLAMA_URL", "").strip().rstrip("/")
+                    hide_reasoning: bool | None = None, settings: Any = None, **options: Any) -> Any:
+    """Always build an Ollama engine; an explicitly empty URL is a configuration error."""
+    url = os.environ.get(f"{prefix}OLLAMA_URL", DEFAULT_URL).strip().rstrip("/")
     if not url:
-        return None
+        raise ValueError(f"{prefix}OLLAMA_URL must not be empty; set an Ollama server URL")
     model = os.environ.get(f"{prefix}OLLAMA_MODEL", "").strip() or default_model
     mode = (thinking or os.environ.get(f"{prefix}THINKING", "") or "off").strip().lower()
     if mode not in ("off", "on"):
@@ -125,11 +173,39 @@ def engine_from_env(prefix: str, engine_class: type, default_model: str, thinkin
     live = live if settings is not None else None
 
     def local_digest(_: str) -> str | None:
-        with _call(url, "/api/tags", None, 15) as response:
-            return next((m["digest"] for m in json.load(response)["models"] if m["name"] == model), None)
+        reply = _json_call(url, "/api/tags", None, 15, model)
+        try:
+            digest = next((m["digest"] for m in reply["models"] if m["name"] in (model, f"{model}:latest")), None)
+            return digest.removeprefix("sha256:").lower() if digest else None
+        except _READ_ERRORS:
+            raise _unavailable(model) from None
+
+    def remote_digest(_: str) -> str:
+        """Hash the registry manifest bytes, matching Ollama's installed digest."""
+        name = model
+        host = "registry.ollama.ai"
+        if name.startswith(("hf.co/", "huggingface.co/")):
+            host, name = name.split("/", 1)
+        name, separator, tag = name.partition(":")
+        if not separator:
+            tag = "latest"
+        if host == "registry.ollama.ai" and "/" not in name:
+            name = "library/" + name
+        request = urllib.request.Request(
+            f"https://{host}/v2/{quote(name, safe='/')}/manifests/{quote(tag, safe='')}",
+            headers={"Accept": "application/vnd.docker.distribution.manifest.v2+json"})
+        with urllib.request.urlopen(request, timeout=15) as response:
+            raw = response.read()
+        manifest = json.loads(raw)
+        if (not isinstance(manifest, dict) or manifest.get("schemaVersion") != 2
+                or not isinstance(manifest.get("config"), dict) or not isinstance(manifest.get("layers"), list)):
+            raise EngineError("Registry returned an invalid model manifest", 503)
+        return hashlib.sha256(raw).hexdigest()
 
     def pull(_: str) -> None:
-        _call(url, "/api/pull", {"model": model, "stream": False}, 3600).close()
+        reply = _json_call(url, "/api/pull", {"model": model, "stream": False}, 3600, model)
+        if reply.get("status") != "success":
+            raise _unavailable(model)
 
-    return engine_class(model, loader=lambda source: OllamaLoaded(url, source, thinking=mode == "on", hide_reasoning=hide, live=live), set_threads=lambda count: None,
-                        cached_sha=local_digest, remote_sha=lambda _: local_digest(_) or "", download=pull, **options)
+    return engine_class(model, parallel=_parallel(), loader=lambda source: OllamaLoaded(url, source, thinking=mode == "on", hide_reasoning=hide, live=live),
+                        cached_sha=local_digest, remote_sha=remote_digest, download=pull, **options)

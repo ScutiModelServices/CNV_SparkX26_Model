@@ -2,7 +2,21 @@
 
 ## Unreleased
 
-- `SERVICE_MODELS_DIR` sets where a local (no Docker) run keeps downloaded model weights: `settings.apply_models_dir()` maps it to `HF_HOME` and `OLLAMA_MODELS` at start.
+- Admin page: the CPU threads card and tile are hidden when `CONFIG.tags` has `host-threads`, and the Project models card is shown only with `project-models`.
+
+- Admin page: `CONFIG.tags` (same tags as `docs/purpose.md`) switch tag-driven notes: `gpu` shows a CPU-threads note, `license-restricted` shows a licence note on the Updates card.
+
+- Fix: after Download, a CPU threads change or a sync from another replica drops the loaded model, the service now reloads it in the background (when "Load the model at start" is on) instead of showing "Starting" on `/admin/` until the first request.
+- Breaking: startup, warm-up and requests load downloaded weights only. First run: open `/admin/` → Updates → Download; health/admin remain available and inference returns 503 until ready.
+- Updates compares the downloaded Ollama manifest digest with the online manifest without pulling; only admin Download pulls and invalidates replicas.
+
+- New `SERVICE_OLLAMA_PARALLEL` (default 2): generations one replica runs at once, like CNV_MiniCPM52B_Model. Before, each replica ran one at a time. Set it to the `OLLAMA_NUM_PARALLEL` of your Ollama; the in-flight cap defaults to 4 x this value.
+- Breaking: generation is now Ollama-only. Removed the torch/transformers backend, accelerate, CPU index and all weight-loader dependencies; no Hugging Face checkpoint loading remains.
+- Breaking: removed model, dtype, max_project_models and project_models_dir settings and the project request field (422). Project model folders are no longer used. Token project restrictions are removed: projects accepts only null or omission, lists return 422, and old restrictions are hidden in token listings.
+- SERVICE_OLLAMA_URL defaults to http://127.0.0.1:11434 locally and http://host.docker.internal:11434 in Compose; an explicitly empty value is an error. SERVICE_OLLAMA_MODEL remains startup-only.
+- Missing or unreachable Ollama leaves health and admin available, ready false; chat returns 503 with a start/pull hint. Updates shows installed digests without registry comparison; Download stays available and always runs Ollama pull. CPU threads card saves/reports only; Ollama chooses threads.
+- Migration: start Ollama and pull hf.co/XHToken/Spark-X2.6-1.7B-GGUF:Q4_K_M. Remove obsolete settings from operator configuration. The old cnv_sparkx26_model_models volume with HF weights is unused and can be deleted after backup; Compose now mounts only the existing data volume. Keep old volume and project folders to roll back to the preceding commit; no stored data is deleted automatically.
+
 - Docs: `docs/guide-cli.md`, a PowerShell-only way to test the service.
 
 ### Breaking: common service environment variables
