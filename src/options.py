@@ -1,5 +1,6 @@
 """The options the admin page can change. Each can still start from its environment variable; a saved value wins."""
 
+from engine import DEFAULT_MODEL
 from settings import Setting
 
 SETTINGS = [
@@ -13,5 +14,7 @@ SETTINGS = [
             help="off or on. on lets the model think before it answers: slower, and it needs a model that supports thinking. Changes select a separate answer-cache entry"),
     Setting("hide_reasoning", "Hide reasoning written into the answer", "bool", True, "SERVICE_HIDE_REASONING",
             help="Drops everything before the last </think>. A streamed reply is then sent when complete, in one piece (Ollama backend)"),
+    Setting("ollama_model", "Ollama model", "text", DEFAULT_MODEL, "SERVICE_OLLAMA_MODEL", restart=True, blank=False,
+            help="The Ollama name, hf.co/<org>/<repo>:<quantization>. Use the Model variant card, which only offers what this machine can run. After a restart, download it from the Updates card"),
     Setting("warm", "Load the model at start", "bool", True, "SERVICE_WARM", restart=True),
 ]

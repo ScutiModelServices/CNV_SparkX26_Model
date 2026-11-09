@@ -91,6 +91,10 @@ Leave project lists empty in the shared token editor. Restrictions are removed: 
 - **Usage:** each row shows errors (answers with status 500 or above) and the average time per call. The counters are written at most once a minute.
 - **Metrics:** `GET /metrics` (send the admin password in `X-Internal-Token`) returns the same numbers as Prometheus text, one series per token. It reads the shared token file, so any replica answers with the same data. `spark_request_seconds` is a histogram of how long each `/v1` call took on the replica that answers (to the first byte for a streamed reply); it starts from 0 when the replica restarts.
 
+## Model variant
+
+The **Model variant** card lists the Spark-X2.6 quantizations (`Q4_K_M` and `Q8_0`). Each row shows the estimated memory it takes (the file size plus a margin; not measured), the download size, whether Ollama already has it, and whether it would run on the GPU or the CPU (slower). The top line shows what this machine has. A quantization that fits neither the free GPU memory nor the free RAM is greyed with the reason and cannot be chosen. When Ollama runs on another machine its memory cannot be seen, so nothing is blocked and the card says so. **Use** saves the Ollama model name; restart the service to apply it, then press Download on the Updates card if Ollama does not have it yet. The model that is already loaded counts as fitting.
+
 ## Settings
 
 The **Settings** card changes options without editing `.env.compose`, `.env` or restarting: update-check interval, caches and limits, and similar. Each row shows where its value comes from (saved, environment or default). A value saved here beats the environment variable; **Reset** removes it. Every replica reads the shared settings file, so a change applies within a few seconds. Rows marked "applies after a restart" are read once at start. The admin password, ports, replica count and other Docker settings stay in `.env` or the compose file, because the service cannot change its own container.

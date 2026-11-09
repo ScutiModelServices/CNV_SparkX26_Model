@@ -75,5 +75,5 @@ def test_only_ollama_settings_remain(tmp_path):
     from options import SETTINGS
     config = Config(tmp_path / "s.json", SETTINGS)
     assert {row["key"] for row in config.describe()} == {
-        "update_check_hours", "max_inflight", "cache_size", "thinking", "hide_reasoning", "warm"
+        "update_check_hours", "max_inflight", "cache_size", "thinking", "hide_reasoning", "ollama_model", "warm"
     }

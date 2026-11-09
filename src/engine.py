@@ -30,8 +30,11 @@ class SparkEngine:
                  timeout: float = 120.0, parallel: int = 1, marker: Path | None = None,
                  remote_sha: Callable[[str], str] = lambda _: "",
                  cached_sha: Callable[[str], str | None] = lambda _: None,
-                 download: Callable[[str], None] = lambda _: None) -> None:
+                 download: Callable[[str], None] = lambda _: None,
+                 local_models: Callable[[], set[str]] = lambda: set(), same_machine: bool = True) -> None:
         self.model, self._loader = model, loader
+        self._local_models = local_models
+        self.same_machine = same_machine  # Ollama runs on the machine this service sees, so its free memory is known
         self._threads: int | None = None  # retained for the shared card; Ollama chooses its own threads
         self._timeout, self._marker = timeout, marker
         self._seen = self._read_marker()
@@ -53,6 +56,13 @@ class SparkEngine:
     @property
     def ready(self) -> bool:
         return self._base is not None
+
+    async def downloaded(self) -> set[str]:
+        """Ollama model names on disk; empty when Ollama cannot be reached."""
+        try:
+            return await asyncio.to_thread(self._local_models)
+        except EngineError:
+            return set()
 
     async def close(self) -> None:
         await asyncio.to_thread(self._forget)

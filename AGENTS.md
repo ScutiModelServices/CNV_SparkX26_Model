@@ -17,6 +17,7 @@ This file is the one instruction file for every coding agent; `CLAUDE.md` only i
 - Generation uses Ollama exclusively through `src/ollama_backend.py`; keep injected fake loaders in tests. Unset local URL defaults to localhost; explicitly empty URL is an error.
 - API starts while Ollama is unavailable: health reports not ready and chat returns sanitized 503 with a admin Updates Download hint. Warm-up stays in the background.
 - Public chat fields are messages, temperature, max_tokens and stream; unknown fields return 422. CPU thread values are display-only; Ollama manages its own threads.
+- Variants: `src/variants.py` lists the GGUF quantizations of `XHToken/Spark-X2.6-1.7B-GGUF` (real file sizes; the estimate is arithmetic and labelled so), `src/hardware.py` reads RAM and the GPU (the same file as in STT_Whisper_Model). The Ollama model name is the restart setting `ollama_model`, which the `/admin/variant` endpoint saves; `engine_from_env` reads it from the settings. When Ollama is not on this machine (`engine.same_machine` is False) nothing is checked or blocked.
 - Update invalidation markers live alongside tokens in the shared data volume. Ollama stores its own weights.
 - Behaviour changes update `README.md`, `deployment.md`, `docs/guide-web-ui.md`, `.env.example` and `CHANGELOG.md` in the same commit.
 - Never read or print `.env`, `.env.local`, `.env.compose`, `tokens.json` or `settings.json`.

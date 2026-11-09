@@ -114,7 +114,7 @@ def test_engine_from_env_defaults_locally_and_serves_through_ollama(url, monkeyp
 
 def test_a_saved_setting_applies_to_the_next_call_without_a_restart(url, monkeypatch):
     monkeypatch.setenv("SERVICE_OLLAMA_URL", url)
-    values = {"thinking": "off", "hide_reasoning": True}
+    values = {"thinking": "off", "hide_reasoning": True, "ollama_model": "m"}
 
     class Saved:
         def get(self, key):
