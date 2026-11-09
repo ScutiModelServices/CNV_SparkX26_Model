@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Admin page: `CONFIG.tags` (same tags as `docs/purpose.md`) switch tag-driven notes: `gpu` shows a CPU-threads note, `license-restricted` shows a licence note on the Updates card.
+
 - Fix: after Download, a CPU threads change or a sync from another replica drops the loaded model, the service now reloads it in the background (when "Load the model at start" is on) instead of showing "Starting" on `/admin/` until the first request.
 - Breaking: startup, warm-up and requests load downloaded weights only. First run: open `/admin/` → Updates → Download; health/admin remain available and inference returns 503 until ready.
 - Updates compares the downloaded Ollama manifest digest with the online manifest without pulling; only admin Download pulls and invalidates replicas.
