@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Fix: a caller that hangs up while the first piece of a stream is still being made (a buffered answer with `hide_reasoning` on) now stops the generation. Before, the model kept answering to the end and the next call waited for it (measured 10 to 12 s). The request timing moved from `@app.middleware("http")` to a plain ASGI middleware (`Measure` in `src/disconnect.py`), because the decorator form hides a hang-up from `request.is_disconnected()`; metrics are unchanged.
+- Admin page: a closeable warning on the Overview appears while no weights are downloaded, with a button to the Updates page. While **Download new weights** runs, the Updates card shows a progress bar with megabytes downloaded (`progress` in `GET /admin/updates`; new shared `src/progress.py`). Replicas share the numbers through a small file next to the weights marker; where that folder is not shared (Ollama services) the bar shows on the replica doing the download.
 
 - Fix: a caller that hangs up while the first piece of a stream is still being made (a buffered answer with `hide_reasoning` on) now stops the generation. Before, the model kept answering to the end and the next call waited for it (measured 10 to 12 s). The request timing moved from `@app.middleware("http")` to a plain ASGI middleware (`Measure` in `src/disconnect.py`), because the decorator form hides a hang-up from `request.is_disconnected()`; metrics are unchanged.
 
