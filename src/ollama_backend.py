@@ -203,8 +203,11 @@ def engine_from_env(prefix: str, engine_class: type, default_model: str, thinkin
         return hashlib.sha256(raw).hexdigest()
 
     def pull(_: str) -> None:
-        reply = _json_call(url, "/api/pull", {"model": model, "stream": False}, 3600, model)
-        if reply.get("status") != "success":
+        from progress import ollama_pull_progress
+
+        with _call(url, "/api/pull", {"model": model, "stream": True}, 3600) as response:
+            status = ollama_pull_progress(response, model)
+        if status != "success":
             raise _unavailable(model)
 
     return engine_class(model, parallel=_parallel(), loader=lambda source: OllamaLoaded(url, source, thinking=mode == "on", hide_reasoning=hide, live=live),
