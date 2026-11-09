@@ -20,6 +20,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
 from cache import AnswerCache
+from disconnect import CallerGone, Measure, first_piece
 from engine import DEFAULT_MODEL, SparkEngine, EngineError, default_marker
 from ollama_backend import OllamaUpdates, engine_from_env
 from options import SETTINGS
@@ -243,7 +244,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
         yield line({"type": "done", **result})
 
     @app.post("/v1/chat")
-    async def chat(body: ChatRequest, response: Response, _auth: None = Depends(authorize),
+    async def chat(body: ChatRequest, request: Request, response: Response, _auth: None = Depends(authorize),
                    _slot: None = Depends(slot)) -> Any:
         started = time.perf_counter()
         size = cache_limit() if body.temperature == 0 else 0  # a higher temperature asks for a different answer each time
@@ -260,7 +261,10 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
             if body.stream:
                 events = client.chat_stream(messages, temperature=body.temperature, max_tokens=body.max_tokens)
                 try:
-                    first = await anext(events, None)  # the first piece is waited for here, so a refusal is still an HTTP error
+                    first = await first_piece(request, events, None)  # waited for here, so a refusal is still an HTTP error
+                except CallerGone:
+                    await events.aclose()
+                    return Response(status_code=499)  # nobody is listening; the generation is already stopped
                 except BaseException:
                     await events.aclose()
                     raise
@@ -342,16 +346,8 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
 
     latency = LatencyHistogram()
 
-    @app.middleware("http")
-    async def measure(request: Request, call_next):
-        started = time.perf_counter()
-        response = await call_next(request)
-        if request.url.path.startswith("/v1/"):
-            latency.observe(time.perf_counter() - started)
-        token_id = getattr(request.state, "token_id", None)
-        if token_id:
-            await run_in_threadpool(tokens.record, token_id, (time.perf_counter() - started) * 1000, response.status_code >= 500)
-        return response
+    app.add_middleware(Measure, observe=latency.observe,
+                       record=lambda token_id, ms, failed: run_in_threadpool(tokens.record, token_id, ms, failed))
 
     @app.get("/metrics", dependencies=[Depends(admin)])
     def metrics() -> PlainTextResponse:
