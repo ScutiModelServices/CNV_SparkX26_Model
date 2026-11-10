@@ -30,7 +30,7 @@ def test_chat_passes_options_and_reports_usage():
     assert call == {"messages": [{"role": "user", "content": "hi"}], "temperature": 0.3, "max_tokens": 50}
 
 
-@pytest.mark.parametrize("extra", [{"tools": []}, {"schema": {"type": "object"}}, {"thinking": False}])
+@pytest.mark.parametrize("extra", [{"schema": {"type": "object"}}, {"thinking": False}])
 def test_features_the_model_lacks_are_refused_not_ignored(extra):
     assert client().post("/v1/chat", json={**BODY, **extra}).status_code == 422
 
@@ -38,7 +38,7 @@ def test_features_the_model_lacks_are_refused_not_ignored(extra):
 def test_request_is_validated():
     c = client()
     assert c.post("/v1/chat", json={"messages": []}).status_code == 422
-    assert c.post("/v1/chat", json={"messages": [{"role": "tool", "content": "x"}]}).status_code == 422
+    assert c.post("/v1/chat", json={"messages": [{"role": "bogus", "content": "x"}]}).status_code == 422
     assert c.post("/v1/chat", json={**BODY, "project": "Bad Name"}).status_code == 422
     assert c.post("/v1/chat", json={**BODY, "max_tokens": 99999}).status_code == 422
 
@@ -332,3 +332,50 @@ def test_unreachable_ollama_leaves_service_available_with_clear_503(monkeypatch,
         assert reply.status_code == 503
         assert "press Download on the Updates card" in reply.json()["detail"]
         assert "127.0.0.1" not in reply.text and "private" not in reply.text
+
+
+CALL = {"function": {"name": "get_weather", "arguments": {"city": "Paris"}}}
+TOOL = {"name": "get_weather", "description": "Weather", "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}}
+
+
+def test_tools_reach_the_model_and_calls_come_back():
+    engine = make_engine(reply="", tool_calls=[CALL])
+    body = client(engine).post("/v1/chat", json={**BODY, "tools": [TOOL]}).json()
+    assert body["tool_calls"] == [{"id": "call_0", "name": "get_weather", "arguments": {"city": "Paris"}}]
+    assert body["finish_reason"] == "tool_calls"
+    assert engine._base.calls[0]["tools"] == [{"type": "function", "function": TOOL}]
+
+
+def test_a_chat_without_tools_has_no_calls_and_sends_no_tools():
+    engine = make_engine()
+    body = client(engine).post("/v1/chat", json=BODY).json()
+    assert body["tool_calls"] == [] and body["finish_reason"] == "stop"
+    assert "tools" not in engine._base.calls[0]
+
+
+def test_tool_results_go_back_to_the_model():
+    engine = make_engine(reply="Sunny")
+    messages = [{"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "", "tool_calls": [{"name": "get_weather", "arguments": {"city": "Paris"}}]},
+                {"role": "tool", "content": "sunny", "tool_name": "get_weather"}]
+    body = client(engine).post("/v1/chat", json={"messages": messages, "tools": [TOOL]}).json()
+    assert body["content"] == "Sunny" and body["tool_calls"] == [] and body["finish_reason"] == "stop"
+    sent = engine._base.calls[0]["messages"]
+    assert sent[1]["tool_calls"] == [CALL] and sent[2]["tool_name"] == "get_weather"
+
+
+def test_stream_done_line_carries_the_tool_calls():
+    engine = make_engine(reply="", tool_calls=[CALL])
+    reply = client(engine).post("/v1/chat", json={**BODY, "stream": True, "tools": [TOOL]})
+    done = [json.loads(row) for row in reply.text.splitlines()][-1]
+    assert done["type"] == "done" and done["tool_calls"][0]["name"] == "get_weather" and done["finish_reason"] == "tool_calls"
+
+
+def test_tools_are_part_of_the_cache_key():
+    engine = make_engine()
+    c = client(engine, cache_size=10)
+    c.post("/v1/chat", json=BODY)
+    c.post("/v1/chat", json={**BODY, "tools": [TOOL]})
+    assert len(engine._base.calls) == 2
+    c.post("/v1/chat", json={**BODY, "tools": [TOOL]})
+    assert len(engine._base.calls) == 2

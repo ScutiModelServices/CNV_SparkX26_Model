@@ -13,4 +13,4 @@
 | Runs on | API on CPU; Spark-X2.6-1.7B runs in external Ollama using its configured hardware. The Model variant card lists the quantizations (`Q4_K_M`, `Q8_0`) with an estimate of the memory each takes and whether this machine can run it. Memory has not been measured for this deployment. |
 
 **Use for:** small-model chat through a shared Ollama service.
-**Not for:** project checkpoint selection, tool calls, schemas or request-level thinking (422).
+**Not for:** project checkpoint selection, schemas or request-level thinking (422).

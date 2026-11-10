@@ -69,9 +69,13 @@ class OllamaLoaded:
     def hide_reasoning(self) -> bool:
         return (self._live or (lambda: self._fixed))()[1]
 
-    def _body(self, messages: list[dict[str, str]], temperature: float, max_tokens: int, stream: bool) -> dict[str, Any]:
-        return {"model": self.model, "messages": messages, "stream": stream, "think": self.thinking,
+    def _body(self, messages: list[dict[str, Any]], temperature: float, max_tokens: int, stream: bool,
+              tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        body = {"model": self.model, "messages": messages, "stream": stream, "think": self.thinking,
                 "options": {"temperature": temperature, "num_predict": max_tokens}}
+        if tools:
+            body["tools"] = tools
+        return body
 
     def _clean(self, text: str, hide: bool | None = None) -> str:
         """Drop reasoning written into content through its final closing marker."""
@@ -82,12 +86,12 @@ class OllamaLoaded:
         return {"prompt_tokens": last.get("prompt_eval_count", 0), "completion_tokens": last.get("eval_count", 0),
                 "finish": "length" if last.get("done_reason") == "length" else "stop"}
 
-    def stream(self, messages: list[dict[str, str]], temperature: float, max_tokens: int, max_time: float,
-               stop: Any) -> Iterator[tuple[str, Any]]:
+    def stream(self, messages: list[dict[str, Any]], temperature: float, max_tokens: int, max_time: float,
+               stop: Any, tools: list[dict[str, Any]] | None = None) -> Iterator[tuple[str, Any]]:
         hide = self.hide_reasoning
         held: list[str] = []
         try:
-            with _call(self.url, "/api/chat", self._body(messages, temperature, max_tokens, True), max_time) as response:
+            with _call(self.url, "/api/chat", self._body(messages, temperature, max_tokens, True, tools), max_time) as response:
                 for raw in response:
                     if stop.is_set():
                         return
@@ -102,6 +106,8 @@ class OllamaLoaded:
                             held.append(text)
                         else:
                             yield "content", text
+                    if isinstance(message.get("tool_calls"), list) and message["tool_calls"]:
+                        yield "tool_calls", message["tool_calls"]
                     if piece.get("done") is True:
                         if held and (answer := self._clean("".join(held), hide)):
                             yield "content", answer
@@ -112,13 +118,17 @@ class OllamaLoaded:
         except _READ_ERRORS:
             raise _unavailable(self.model) from None
 
-    def generate(self, messages: list[dict[str, str]], temperature: float, max_tokens: int, max_time: float) -> dict[str, Any]:
-        reply = _json_call(self.url, "/api/chat", self._body(messages, temperature, max_tokens, False), max_time, self.model)
+    def generate(self, messages: list[dict[str, Any]], temperature: float, max_tokens: int, max_time: float,
+                 tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        reply = _json_call(self.url, "/api/chat", self._body(messages, temperature, max_tokens, False, tools), max_time, self.model)
         try:
             content = reply["message"]["content"]
             if not isinstance(content, str):
                 raise _unavailable(self.model)
-            return {"content": self._clean(content.strip()), **self._stats(reply)}
+            calls = reply["message"].get("tool_calls") or []
+            if not isinstance(calls, list):
+                raise _unavailable(self.model)
+            return {"content": self._clean(content.strip()), **({"tool_calls": calls} if calls else {}), **self._stats(reply)}
         except _READ_ERRORS:
             raise _unavailable(self.model) from None
 

@@ -127,7 +127,7 @@ The browser caps uploads at **10 MiB**, displayed text at **256 KiB**, and binar
 
 ### This service's request
 
-Chat sends messages to `POST /v1/chat`, with optional temperature, max_tokens and streaming. Spark rejects tools, schema and thinking with 422; its form does not send those MiniCPM-only fields.
+Chat sends messages to `POST /v1/chat`, with optional temperature, max_tokens and streaming. Spark rejects schema and thinking with 422; its form does not send those MiniCPM-only fields or tools (call the API for tools).
 
 ## Admin pages and navigation
 

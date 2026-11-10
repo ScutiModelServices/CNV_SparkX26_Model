@@ -18,6 +18,11 @@ class EngineError(RuntimeError):
         self.status = status
 
 
+def _tools(tools: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Loader keyword for the request's tools; nothing when there are none, so plain chats call the loader as before."""
+    return {"tools": tools} if tools else {}
+
+
 def default_marker() -> Path:
     """Share invalidation with replicas using the existing data volume."""
     configured = os.environ.get("SERVICE_WEIGHTS_MARKER")
@@ -76,27 +81,27 @@ class SparkEngine:
                 self._base = self._loader(self.model)
             return self._base
 
-    async def chat(self, messages: list[dict[str, str]], *, temperature: float, max_tokens: int) -> dict[str, Any]:
+    async def chat(self, messages: list[dict[str, str]], *, temperature: float, max_tokens: int, tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         async with self._gate:
             try:
-                return await asyncio.to_thread(self._chat, messages, temperature, max_tokens)
+                return await asyncio.to_thread(self._chat, messages, temperature, max_tokens, tools)
             except EngineError as error:
                 if error.status == 503:
                     await asyncio.to_thread(self._forget)
                 raise
 
-    def _chat(self, messages: list[dict[str, str]], temperature: float, max_tokens: int) -> dict[str, Any]:
-        return {**self._base_model().generate(messages, temperature, max_tokens, self._timeout),
+    def _chat(self, messages: list[dict[str, str]], temperature: float, max_tokens: int, tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        return {**self._base_model().generate(messages, temperature, max_tokens, self._timeout, **_tools(tools)),
                 "model": self.model, "fallback": False}
 
     async def chat_stream(self, messages: list[dict[str, str]], *, temperature: float,
-                          max_tokens: int) -> AsyncIterator[tuple[str, Any]]:
+                          max_tokens: int, tools: list[dict[str, Any]] | None = None) -> AsyncIterator[tuple[str, Any]]:
         """Hold the generation slot through completion and stop on cancellation."""
         stop = threading.Event()
         async with self._gate:
             try:
                 loaded = await asyncio.to_thread(self._base_model)
-                events = loaded.stream(messages, temperature, max_tokens, self._timeout, stop)
+                events = loaded.stream(messages, temperature, max_tokens, self._timeout, stop, **_tools(tools))
                 while (event := await asyncio.to_thread(next, events, None)) is not None:
                     kind, value = event
                     yield kind, ({**value, "model": self.model, "fallback": False} if kind == "done" else value)

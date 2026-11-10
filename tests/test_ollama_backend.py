@@ -30,6 +30,15 @@ class FakeOllama(BaseHTTPRequestHandler):
             return self.send_json({"status": "success"})
         if self.path == "/api/generate":
             return self.send_json({"done": True})
+        if body.get("tools"):  # a model that wants to call a tool
+            call = {"function": {"name": "get_weather", "arguments": {"city": "Paris"}}}
+            if not body["stream"]:
+                return self.send_json({"message": {"content": "", "tool_calls": [call]}, "done": True, "prompt_eval_count": 7, "eval_count": 2})
+            self.send_response(200)
+            self.end_headers()
+            for piece in ({"message": {"content": "", "tool_calls": [call]}}, {"done": True, "done_reason": "stop", "prompt_eval_count": 7, "eval_count": 2}):
+                self.wfile.write(json.dumps(piece).encode() + b"\n")
+            return
         if body["stream"]:
             self.send_response(200)
             self.end_headers()
@@ -262,3 +271,22 @@ def test_parallel_comes_from_service_ollama_parallel(monkeypatch):
     monkeypatch.setenv("SERVICE_OLLAMA_PARALLEL", "0")
     with pytest.raises(ValueError):
         engine_from_env("SERVICE_", SparkEngine, "m")
+
+
+TOOLS = [{"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object"}}}]
+CALL = {"function": {"name": "get_weather", "arguments": {"city": "Paris"}}}
+
+
+def test_tools_are_sent_and_calls_come_back(url):
+    reply = OllamaLoaded(url, "m").generate([{"role": "user", "content": "hi"}], 0.0, 9, 5, TOOLS)
+    assert seen[-1][1]["tools"] == TOOLS and reply["tool_calls"] == [CALL] and reply["content"] == ""
+
+
+def test_no_tools_key_without_tools(url):
+    reply = OllamaLoaded(url, "m").generate([{"role": "user", "content": "hi"}], 0.0, 9, 5)
+    assert "tools" not in seen[-1][1] and "tool_calls" not in reply
+
+
+def test_stream_yields_tool_calls_then_done(url):
+    events = list(OllamaLoaded(url, "m").stream([{"role": "user", "content": "hi"}], 0.0, 9, 5, threading.Event(), TOOLS))
+    assert events[0] == ("tool_calls", [CALL]) and events[-1][0] == "done"

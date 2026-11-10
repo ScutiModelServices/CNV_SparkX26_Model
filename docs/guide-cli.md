@@ -28,7 +28,7 @@ Invoke-RestMethod -Method Post -Uri "$base/v1/chat" -Headers $h -ContentType "ap
 
 Add `stream = $true` to get JSON lines while the answer is made.
 
-Unknown fields, including project, tools, schema and request thinking, get 422. Start Ollama and pull the configured model before calling.
+Unknown fields, including project, schema and request thinking, get 422. `tools` are accepted (see the README). Start Ollama and pull the configured model before calling.
 
 ## Problems
 

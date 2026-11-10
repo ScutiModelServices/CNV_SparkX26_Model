@@ -32,18 +32,48 @@ from updates import Updates
 
 _log = logging.getLogger(__name__)
 
+class ToolCall(BaseModel):
+    id: str | None = None
+    name: str = Field(min_length=1, max_length=64)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class Message(BaseModel):
-    role: Literal["system", "user", "assistant"]
+    """`tool_calls` belongs to an assistant turn; a `tool` message carries one call's result (`tool_name` names it)."""
+
+    role: Literal["system", "user", "assistant", "tool"]
     content: str = Field("", max_length=100_000)
+    tool_calls: list[ToolCall] | None = None
+    tool_name: str | None = Field(None, max_length=64)
+
+
+class Tool(BaseModel):
+    name: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,64}$")
+    description: str = Field("", max_length=2000)
+    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
 
 
 class ChatRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")  # tools, schema and thinking are refused, not silently ignored
+    model_config = ConfigDict(extra="forbid")  # schema and thinking are refused, not silently ignored
 
     messages: list[Message] = Field(min_length=1, max_length=64)
+    tools: list[Tool] | None = Field(None, max_length=32)
     temperature: float = Field(0.0, ge=0, le=2)
     max_tokens: int = Field(512, ge=1, le=4096)
     stream: bool = False  # true: the answer arrives as JSON lines while it is made
+
+
+def _ollama_message(message: Message) -> dict[str, Any]:
+    out: dict[str, Any] = {"role": message.role, "content": message.content}
+    if message.tool_calls:
+        out["tool_calls"] = [{"function": {"name": call.name, "arguments": call.arguments}} for call in message.tool_calls]
+    if message.tool_name:
+        out["tool_name"] = message.tool_name
+    return out
+
+
+def _ollama_tool(tool: Tool) -> dict[str, Any]:
+    return {"type": "function", "function": tool.model_dump()}
 
 
 class SettingsUpdate(BaseModel):
@@ -194,7 +224,12 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
                 "num_thread": client.num_thread}
 
     def build(reply: dict[str, Any], started: float) -> dict[str, Any]:
-        return {"content": reply["content"], "finish_reason": reply["finish"], "model": reply["model"],
+        calls = [{"id": call.get("id") or f"call_{index}", "name": call["function"]["name"],
+                  "arguments": call["function"].get("arguments") or {}}
+                 for index, call in enumerate(reply.get("tool_calls") or [])
+                 if isinstance(call.get("function"), dict) and call["function"].get("name")]
+        return {"content": reply["content"], "tool_calls": calls, "finish_reason": "tool_calls" if calls else reply["finish"],
+                "model": reply["model"],
                 "fallback": reply["fallback"],
                 "usage": {"input_tokens": reply["prompt_tokens"], "output_tokens": reply["completion_tokens"]},
                 "duration_ms": round((time.perf_counter() - started) * 1000)}
@@ -202,6 +237,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
     def cache_key(body: ChatRequest) -> str:
         """Generation identifies answers made before a model refresh."""
         part = [client.generation, [m.model_dump() for m in body.messages], body.max_tokens,
+                [t.model_dump() for t in body.tools or []],
                 config.get("thinking") if config else None, config.get("hide_reasoning") if config else None]
         return hashlib.sha256(json.dumps(part, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -222,6 +258,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
         after the first piece can only be sent as an `error` line."""
         parts: list[str] = []
         stats: dict[str, Any] = {}
+        calls: list[dict[str, Any]] = []
         try:
             async def all_events():
                 if first is not None:
@@ -233,6 +270,8 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
                 if kind == "content":
                     parts.append(value)
                     yield line({"type": "content", "text": value})
+                elif kind == "tool_calls":
+                    calls.extend(value)
                 else:
                     stats = value
         except EngineError as error:
@@ -244,7 +283,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
             return
         finally:
             await events.aclose()
-        result = build({**stats, "content": "".join(parts).strip()}, started)
+        result = build({**stats, "content": "".join(parts).strip(), "tool_calls": calls}, started)
         if key:
             cache.put(key, result, size)
         yield line({"type": "done", **result})
@@ -262,10 +301,11 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
                 return ndjson(replay(kept), "hit")
             response.headers["X-Cache"] = "hit"
             return kept
-        messages = [m.model_dump() for m in body.messages]
+        messages = [_ollama_message(m) for m in body.messages]
+        extra = {"tools": [_ollama_tool(t) for t in body.tools]} if body.tools else {}  # only sent when used
         try:
             if body.stream:
-                events = client.chat_stream(messages, temperature=body.temperature, max_tokens=body.max_tokens)
+                events = client.chat_stream(messages, temperature=body.temperature, max_tokens=body.max_tokens, **extra)
                 try:
                     first = await first_piece(request, events, None)  # waited for here, so a refusal is still an HTTP error
                 except CallerGone:
@@ -275,7 +315,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
                     await events.aclose()
                     raise
                 return ndjson(live_lines(events, first, started, key, size), "miss")
-            reply = await client.chat(messages, temperature=body.temperature, max_tokens=body.max_tokens)
+            reply = await client.chat(messages, temperature=body.temperature, max_tokens=body.max_tokens, **extra)
         except EngineError as error:
             raise HTTPException(422 if error.status == 400 else (error.status or 500), str(error)) from None
         except Exception:

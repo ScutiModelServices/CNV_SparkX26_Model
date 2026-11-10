@@ -19,6 +19,7 @@ This file is the one instruction file for every coding agent; `CLAUDE.md` only i
 - Public chat fields are messages, temperature, max_tokens and stream; unknown fields return 422. CPU thread values are display-only; Ollama manages its own threads.
 - Variants: `src/variants.py` lists the GGUF quantizations of `XHToken/Spark-X2.6-1.7B-GGUF` (real file sizes; the estimate is arithmetic and labelled so), `src/hardware.py` reads RAM and the GPU (the same file as in STT_Whisper_Model). The Ollama model name is the restart setting `ollama_model`, which the `/admin/variant` endpoint saves; `engine_from_env` reads it from the settings. When Ollama is not on this machine (`engine.same_machine` is False) nothing is checked or blocked.
 - Update invalidation markers live alongside tokens in the shared data volume. Ollama stores its own weights.
+- `POST /v1/chat` passes `tools` to Ollama and returns `tool_calls` (the one difference from CNV_BitNet2B_Model, whose engine shape this copies); `schema`, request-level `thinking` and `project` are 422. Loaders get `tools=` only when a request has tools.
 - Behaviour changes update `README.md`, `deployment.md`, `docs/guide-web-ui.md`, `.env.example` and `CHANGELOG.md` in the same commit.
 - Never read or print `.env`, `.env.local`, `.env.compose`, `tokens.json` or `settings.json`.
 - Commit with the noreply author email `214214011+scutiii2@users.noreply.github.com` (another address is rejected on push). Push `main`, then run `python tools/publish_live.py`. Build Docker only when the Dockerfile or the dependencies changed.

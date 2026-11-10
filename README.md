@@ -11,7 +11,7 @@ Spark-X2.6-1.7B chat over HTTP through Ollama, port 29203. API replicas share on
 | `POST /v1/chat` | `messages`, optional `temperature`, `max_tokens`, `stream` → content, finish_reason, model, fallback, usage, duration_ms. |
 | `GET /health` | Public status, model, ready and num_thread. |
 
-**Input.** One to 64 messages with system, user or assistant role; each content is at most 100,000 characters. Temperature is 0–2; max_tokens is 1–4096 (default 512). Unknown fields, including `project`, `tools`, `schema` and request-level `thinking`, return 422. `fallback` remains false for response compatibility.
+**Input.** One to 64 messages with system, user, assistant or tool role; each content is at most 100,000 characters. Temperature is 0–2; max_tokens is 1–4096 (default 512). Unknown fields, including `project`, `schema` and request-level `thinking`, return 422. Optional `tools` (up to 32 `{name, description, parameters}`) go to Ollama; the answer then has `tool_calls` (`id`, `name`, `arguments`) and `finish_reason` `tool_calls`. Send the assistant turn with its `tool_calls` and the result as a `tool` message (`tool_name` names the call) to continue. `fallback` remains false for response compatibility.
 
 **Streaming.** `stream: true` returns NDJSON content lines then done with the full result. Before the first piece, upstream unavailability returns HTTP 503 with “start Ollama and pull <model>”. Later errors become error lines. With hide_reasoning enabled (default), content is held until completion and text before the last `</think>` is removed.
 
