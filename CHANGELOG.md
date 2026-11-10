@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Playground: more request fields
+
+Tools (optional) field in the Chat form; the service already accepted `tools`.
+
 ### CPU threads reach Ollama
 
 - The CPU threads card is now live: the value is sent to Ollama as `options.num_thread` with every request (like `CNV_MiniCPM52B_Model` and `CNV_LFM3_Model`), and every replica applies a change within about a second. The `host-threads` tag is removed from `CONFIG.tags` and `docs/purpose.md`, so the card and tile show again. Ollama reloads the model once when the value changes. Unset = Ollama decides, as before. Set it to the number of physical cores.
