@@ -54,7 +54,7 @@ Tests inject fake loaders and a local fake Ollama; they need no real model.
 
 ## Try it from the admin page
 
-Open `/admin/`, sign in and paste a public token in Try it. Chat sends messages, temperature, max_tokens and streaming to `/v1/chat`. The panel shows status, timing, cancellation and a redacted curl command. See [web UI guide](docs/guide-web-ui.md#try-it-send-a-real-request).
+Open `/admin/`, sign in and use Try it (a temporary token is filled in for you). Chat sends messages, temperature, max_tokens and streaming to `/v1/chat`. The panel shows status, timing, cancellation and a redacted curl command. See [web UI guide](docs/guide-web-ui.md#try-it-send-a-real-request).
 
 ## Documentation
 

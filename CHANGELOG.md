@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Playground: no token to paste
+
+The Try it panel signs in with a temporary public token made from the admin session (named `playground (temporary)`, valid 1 day, revoked on sign-out or when the tab closes), so the service token field is hidden and choices such as voices load by themselves. The token shows in the tokens list while it lives.
+
+
 - `POST /v1/chat` takes optional `tools` (up to 32 `{name, description, parameters}`) and passes them to Ollama. A model that wants a tool answers with `tool_calls` (`id`, `name`, `arguments`) and `finish_reason: "tool_calls"`; send the assistant turn with its `tool_calls` and the result as a `tool` message (`tool_name` names the call) to continue. Messages may now have the role `tool`. Every answer has a `tool_calls` list (empty when none), a stream carries it on the `done` line, and `tools` are part of the answer-cache key. `schema`, request-level `thinking` and `project` still return 422. Checked against the pulled model: a weather call, the tool-result turn and a streamed call all worked. This is a breaking change for callers that relied on `tools` returning 422.
 
 - Admin page: new **Model variant** card. It lists the Spark-X2.6 quantizations (`Q4_K_M`, `Q8_0`) with an estimate of the memory each takes (file size x 1.1 + 400 MB; not measured), the download size, whether Ollama has it, and whether this machine can run it on the GPU or only the CPU. Endpoints `GET /admin/variants` and `PUT /admin/variant` (409 when it does not fit). The Ollama model name is now the restart setting `ollama_model` (saved value, else `SERVICE_OLLAMA_MODEL`, else the default). New `src/hardware.py` and `src/variants.py`.
