@@ -55,7 +55,7 @@ Tokens are enforced only while `SERVICE_ADMIN_PASSWORD` is set.
 
 ## CPU threads
 
-The shared card saves and reports 1-256 for compatibility. It has no effect on generation: Ollama chooses its own threads. Other replicas synchronize the displayed value within a few seconds.
+The shared card saves 1-256 and sends it to Ollama as `num_thread` with every request; unset lets Ollama decide. Other replicas apply the saved value within a few seconds. Ollama reloads the model once when the value changes, so that first answer is slower. Set it to the physical core count.
 
 ## Replicas and parallel requests (read-only)
 

@@ -329,7 +329,7 @@ def create_app(client: SparkEngine | None = None, admin_password: str | None = N
 
     @app.put("/admin/threads", dependencies=[Depends(admin)])
     def set_threads(body: Threads) -> dict[str, Any]:
-        """Saves the shared card value; Ollama chooses its own threads and ignores this value."""
+        """Saves the shared card value; it is sent to Ollama as num_thread with every request."""
         client.num_thread = body.num_thread
         settings.save(tokens.settings_path, num_thread=body.num_thread)
         return {"num_thread": client.num_thread}

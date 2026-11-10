@@ -75,3 +75,12 @@ def test_request_refusal_keeps_loaded_backend_ready():
     with pytest.raises(EngineError):
         ask(engine)
     assert engine.ready
+
+
+def test_thread_count_reaches_the_loaded_model_before_and_after_loading():
+    engine = make_engine()
+    engine.num_thread = 4
+    ask(engine)
+    assert engine._base.num_thread == 4
+    engine.num_thread = 6
+    assert engine._base.num_thread == 6

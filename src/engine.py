@@ -40,7 +40,7 @@ class SparkEngine:
         self.model, self._loader = model, loader
         self._local_models = local_models
         self.same_machine = same_machine  # Ollama runs on the machine this service sees, so its free memory is known
-        self._threads: int | None = None  # retained for the shared card; Ollama chooses its own threads
+        self._threads: int | None = None  # sent to Ollama as num_thread; None = Ollama decides
         self._timeout, self._marker = timeout, marker
         self._seen = self._read_marker()
         self._remote_sha_of, self._cached_sha_of, self._download_of = remote_sha, cached_sha, download
@@ -57,6 +57,8 @@ class SparkEngine:
     @num_thread.setter
     def num_thread(self, count: int) -> None:
         self._threads = count
+        if self._base is not None:
+            self._base.num_thread = count  # the next request carries it to Ollama
 
     @property
     def ready(self) -> bool:
@@ -79,6 +81,7 @@ class SparkEngine:
         with self._load_lock:
             if self._base is None:
                 self._base = self._loader(self.model)
+                self._base.num_thread = self._threads
             return self._base
 
     async def chat(self, messages: list[dict[str, str]], *, temperature: float, max_tokens: int, tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:

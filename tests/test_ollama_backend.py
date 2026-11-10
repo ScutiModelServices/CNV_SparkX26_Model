@@ -75,6 +75,15 @@ def test_chat_turns_thinking_off_and_maps_the_stats(url):
     assert body["think"] is False and body["options"] == {"temperature": 0.0, "num_predict": 9}
 
 
+def test_num_thread_is_sent_to_ollama_only_when_set(url):
+    loaded = OllamaLoaded(url, "m")
+    loaded.generate([{"role": "user", "content": "hi"}], 0.0, 9, 5)
+    assert "num_thread" not in seen[-1][1]["options"]
+    loaded.num_thread = 3
+    loaded.generate([{"role": "user", "content": "hi"}], 0.0, 9, 5)
+    assert seen[-1][1]["options"]["num_thread"] == 3
+
+
 def test_stream_yields_pieces_then_done(url):
     events = list(OllamaLoaded(url, "m", hide_reasoning=False).stream([{"role": "user", "content": "hi"}], 0.0, 9, 5, threading.Event()))
     assert events == [("content", "Hel"), ("content", "lo"),

@@ -59,6 +59,7 @@ class OllamaLoaded:
                  hide_reasoning: bool = True, live: Callable[[], tuple[bool, bool]] | None = None) -> None:
         """Read live thinking/visibility settings for each generation."""
         self.url, self.model, self._fixed, self._live = url.rstrip("/"), model, (thinking, hide_reasoning), live
+        self.num_thread: int | None = None  # CPU threads Ollama uses per request; None = Ollama decides
         _json_call(self.url, "/api/generate", {"model": model, "prompt": "", "stream": False}, load_timeout, model)
 
     @property
@@ -73,6 +74,8 @@ class OllamaLoaded:
               tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         body = {"model": self.model, "messages": messages, "stream": stream, "think": self.thinking,
                 "options": {"temperature": temperature, "num_predict": max_tokens}}
+        if self.num_thread:
+            body["options"]["num_thread"] = self.num_thread
         if tools:
             body["tools"] = tools
         return body

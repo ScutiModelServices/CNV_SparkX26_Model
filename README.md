@@ -21,7 +21,7 @@ Spark-X2.6-1.7B chat over HTTP through Ollama, port 29203. API replicas share on
 
 ## Admin page
 
-`/admin/` provides tokens, usage, metrics, replicas, Settings and Updates. CPU threads are saved and reported only; Ollama chooses its own threads. The Updates card compares the downloaded Ollama manifest digest with the online registry manifest at startup, every `update_check_hours` and on **Check now**. Checks fetch metadata only; only **Download** runs `ollama pull`. A successful download invalidates every replica through shared storage; each replica reloads on its next request.
+`/admin/` provides tokens, usage, metrics, replicas, Settings and Updates. CPU threads are sent to Ollama as `num_thread` with every request; unset lets Ollama decide. Set it to the physical core count. The Updates card compares the downloaded Ollama manifest digest with the online registry manifest at startup, every `update_check_hours` and on **Check now**. Checks fetch metadata only; only **Download** runs `ollama pull`. A successful download invalidates every replica through shared storage; each replica reloads on its next request.
 
 ## Run
 
